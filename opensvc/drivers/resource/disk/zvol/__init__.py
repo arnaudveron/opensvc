@@ -178,9 +178,9 @@ class DiskZvol(BaseDisk):
         if self.has_it():
             self.log.info("zvol %s already exists", self.name)
             return
-        cmd = [Env.syspaths.zfs, "create", "-V"]
+        cmd = [Env.syspaths.zfs, "create"]
         cmd += self.create_options
-        cmd += [str(convert_size(self.size, _to="m"))+'M', self.name]
+        cmd += ["-V", str(convert_size(self.size, _to="m"))+'M', self.name]
         ret, out, err = self.vcall(cmd)
         if ret != 0:
             raise ex.Error
