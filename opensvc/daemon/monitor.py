@@ -2646,6 +2646,7 @@ class Monitor(shared.OsvcThread, MonitorObjectOrchestratorManualMixin):
             candidates = self.placement_candidates(
                 svc, discard_frozen=False,
                 discard_unprovisioned=False,
+                discard_overloaded=False,
             )
         try:
             top = self.placement_ranks(svc, candidates=candidates)[0]
