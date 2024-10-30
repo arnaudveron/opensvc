@@ -190,7 +190,7 @@ def set_cpu_quota_v2(o):
     if "%" in quota:
         quota = int(quota.strip("%"))
     else:
-        raise ex.Error("malformed cpu quota: %s (need 10%, 10%@2 or 10%@all expressions)" % (v, str(e)))
+        raise ex.Error("malformed cpu quota: %s (need 10%%, 10%%@2 or 10%%@all expressions)" % v)
 
     from utilities.asset import Asset
     total_threads = int(Asset(None)._get_cpu_threads())
