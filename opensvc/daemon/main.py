@@ -211,6 +211,9 @@ class Daemon(object):
     def set_last_shutdown(self):
         with open(Env.paths.last_shutdown, "w") as filep:
             filep.write("")
+            # Do our best to have file sync on file system
+            if hasattr(os, "fsync"):
+                os.fsync(filep)
 
     def _run(self):
         """
