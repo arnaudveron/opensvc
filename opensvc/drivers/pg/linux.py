@@ -382,6 +382,12 @@ def get_cgroup_path(o, t, create=True):
 
 def remove_pg(o):
     log = o.log
+    if UNIFIED:
+        cgp = os.path.join(os.sep, "sys", "fs", "cgroup", get_cgroup_relpath(o))
+        remove_cgroup(cgp, log)
+        cgp = os.path.join(os.sep, "sys", "fs", "cgroup", get_cgroup_relpath(o, suffix=""))
+        remove_cgroup(cgp, log)
+        return
     for t in CONTROLLERS:
         cgp = os.path.join(os.sep, "sys", "fs", "cgroup", t, get_cgroup_relpath(o))
         remove_cgroup(cgp, log)
