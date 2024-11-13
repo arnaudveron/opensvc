@@ -9,6 +9,7 @@ from .. import \
 from ..docker import KEYWORDS, ContainerDocker
 from utilities.lazy import lazy
 from core.objects.svcdict import KEYS
+from core.resource import Resource
 from utilities.proc import justcall
 
 DRIVER_GROUP = "container"
@@ -106,6 +107,9 @@ class ContainerPodman(ContainerDocker):
         else:
             self.log.info(" ".join(cmd))
         self.is_up_clear_cache()
+
+    def create_pg(self):
+        Resource.create_pg(self, has_subtree=True)
 
     def _start(self):
         BaseContainer.start(self)

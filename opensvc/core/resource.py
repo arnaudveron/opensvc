@@ -978,7 +978,7 @@ class Resource(object):
             return False
         return self.svc.pg.frozen(self)
 
-    def create_pg(self):
+    def create_pg(self, **kwargs):
         """
         Create a process group if this service asks for it and if possible.
         """
@@ -986,7 +986,7 @@ class Resource(object):
             return
         if self.svc.pg is None:
             return
-        self.svc.pg.create_pg(self)
+        self.svc.pg.create_pg(self, **kwargs)
 
     def check_requires(self, action, cluster_data=None):
         """

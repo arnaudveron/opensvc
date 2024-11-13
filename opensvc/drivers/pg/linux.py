@@ -77,9 +77,9 @@ def get_task_file(cgp):
     else:
         return os.path.join(cgp, "tasks")
 
-def set_task(o, t):
+def set_task(o, t, has_subtree=False):
     o.log.debug("set_task : start %s" %(t))
-    cgp = get_cgroup_path(o, t)
+    cgp = get_cgroup_path(o, t, has_subtree=has_subtree)
     path = get_task_file(cgp)
     if UNIFIED and not isinstance(o, Resource):
         # don't add a pid to a non-leaf cgroup to not block
@@ -365,7 +365,7 @@ def get_cgroup_relpath(o, suffix=".slice"):
             elements.append(o.rid.replace("#", ".") + suffix)
     return os.path.join(*elements)
 
-def get_cgroup_path(o, t, create=True):
+def get_cgroup_path(o, t, create=True, has_subtree=False):
     o.log.debug("get_cgroup_path : t=%s, create=%s"%(t, create))
     cgroup_mntpt = get_cgroup_mntpt(t)
     if cgroup_mntpt is None:
@@ -377,7 +377,7 @@ def get_cgroup_path(o, t, create=True):
     if not os.path.exists(cgp) and create:
         if hasattr(o, "cleanup_cgroup"):
             o.cleanup_cgroup(t)
-        create_cgroup(cgp, log=log)
+        create_cgroup(cgp, log=log, has_subtree=has_subtree)
     return cgp
 
 def remove_pg(o):
@@ -410,7 +410,7 @@ def remove_cgroup(cgp, log):
             #print("lingering %s (%s)" % (path, exc))
             pass
 
-def create_cgroup(cgp, log=None):
+def create_cgroup(cgp, log=None, has_subtree=False):
     if UNIFIED:
         parent_cgp = os.path.dirname(os.path.realpath(cgp))
         if parent_cgp != "/sys/fs/cgroup":
@@ -425,7 +425,13 @@ def create_cgroup(cgp, log=None):
             pass
         else:
             raise
-    if not UNIFIED:
+    if UNIFIED:
+        if has_subtree:
+            try:
+                set_sysfs(cgp+"/cgroup.subtree_control", "+cpuset +cpu +io +memory +pids", log=log)
+            except Exception as exc:
+                raise
+    else:
         set_sysfs(cgp+"/cgroup.clone_children", "1", log=log)
     for parm in ("cpus", "mems"):
         parent_val = get_sysfs(cgp+"/../cpuset."+parm)
@@ -564,13 +570,13 @@ def frozen(res):
             return True
     return False
 
-def create_pg(res):
+def create_pg(res, has_subtree=False):
     if not cgroup_capable(res):
         return
 
     _create_pg(res.svc)
     _create_pg(res.rset)
-    _create_pg(res)
+    _create_pg(res, has_subtree=has_subtree)
 
 def set_controllers_task(o):
     for controller in CONTROLLERS:
@@ -579,12 +585,12 @@ def set_controllers_task(o):
         except ex.Error:
             pass
 
-def _create_pg(o):
+def _create_pg(o, has_subtree=False):
     if o is None:
         return
     try:
         if UNIFIED:
-            set_task(o, None)
+            set_task(o, None, has_subtree=has_subtree)
             set_cgroup(o, 'cpuset', 'cpuset.cpus', 'cpus')
             set_cgroup(o, 'cpu', 'cpu.weight', 'cpu_shares')
             set_cgroup(o, 'cpuset', 'cpuset.mems', 'mems')
