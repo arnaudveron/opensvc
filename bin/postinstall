@@ -1226,7 +1226,7 @@ def install_pythonlink_windows():
     installfolder = installfolder.rstrip('\\')
     logit("installfolder = <"+installfolder+">")
     osvcenv = os.path.join(installfolder, 'osvcenv.cmd')
-    content = '@echo off\nset OSVCROOT='+installfolder+'\nset OSVCPYTHONROOT=%OSVCROOT%\python\nset PYTHONPATH=%OSVCROOT%\lib\nset OSVCPYTHONEXEC=%OSVCPYTHONROOT%\python.exe\ncall inpath.cmd OSVCPYTHONROOT'
+    content = '@echo off\nset OSVCROOT='+installfolder+'\nset OSVCPYTHONROOT=%OSVCROOT%\\python\nset PYTHONPATH=%OSVCROOT%\\lib\nset OSVCPYTHONEXEC=%OSVCPYTHONROOT%\\python.exe\ncall inpath.cmd OSVCPYTHONROOT'
     logit(content)
     f = open(osvcenv, 'w')
     f.write(content)

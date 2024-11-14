@@ -2,6 +2,7 @@ import os
 import re
 import glob
 import core.exceptions as ex
+from core.resource import Resource
 from utilities.converters import convert_size
 
 DRIVER_BASENAME = 'pg'
@@ -76,10 +77,14 @@ def get_task_file(cgp):
     else:
         return os.path.join(cgp, "tasks")
 
-def set_task(o, t):
+def set_task(o, t, has_subtree=False):
     o.log.debug("set_task : start %s" %(t))
-    cgp = get_cgroup_path(o, t)
+    cgp = get_cgroup_path(o, t, has_subtree=has_subtree)
     path = get_task_file(cgp)
+    if UNIFIED and not isinstance(o, Resource):
+        # don't add a pid to a non-leaf cgroup to not block
+        # cgroup.subtree_control writes (device busy error)
+        return
     pid = str(os.getpid())
     with open(path, 'r') as f:
         buff = f.read()
@@ -103,6 +108,12 @@ def set_cgroup(o, *args, **kwargs):
     except Exception as exc:
         o.log.warning(exc)
 
+def set_cgroup_value(o, *args, **kwargs):
+    try:
+        _set_cgroup_value(o, *args, **kwargs)
+    except Exception as exc:
+        o.log.warning(exc)
+
 def _set_cgroup(o, t, name, key, force=False):
     o.log.debug("set_cgroup : start %s, %s, %s, %s" %(t, name, key, force))
     if not hasattr(o, "pg_settings"):
@@ -112,19 +123,22 @@ def _set_cgroup(o, t, name, key, force=False):
     value = o.pg_settings[key]
     if value is None:
         return
+    _set_cgroup_value(o, t, name, value, force=force)
+
+def _set_cgroup_value(o, t, name, value, force=False):
     cgp = get_cgroup_path(o, t)
     cocgp = glob.glob(cgp+"/lxc.payload.*")
     err = None
     for _cgp in cocgp + [cgp] + cocgp:
         try:
-            __set_cgroup(o, _cgp, value, t, name, key, force=force)
+            __set_cgroup(o, _cgp, value, t, name, force=force)
             err = None
         except Exception as e:
             err = e
     if err:
         o.log.warning("%s", err)
 
-def __set_cgroup(o, cgp, value, t, name, key, force=False):
+def __set_cgroup(o, cgp, value, t, name, force=False):
     if name == "memory.oom_control":
         current = get_current(cgp, name).split(os.linesep)[0].split()[-1]
     else:
@@ -155,7 +169,46 @@ def get_current(cgp, name):
         buff = f.read()
     return buff
 
-def set_cpu_quota(o):
+def set_cpu_quota_v2(o):
+    try:
+        v = str(o.pg_settings["cpu_quota"])
+    except (AttributeError, KeyError):
+        return
+    o.log.debug("set_cpu_quota : start <%s>", v)
+
+    period = 100000
+
+    if "@" in v:
+        try:
+            quota, threads = v.split("@")
+        except Exception as e:
+            raise ex.Error("malformed cpu quota: %s (%s)" % (v, str(e)))
+    else:
+        threads = 1
+        quota = v
+
+    if "%" in quota:
+        quota = int(quota.strip("%"))
+    else:
+        raise ex.Error("malformed cpu quota: %s (need 10%%, 10%%@2 or 10%%@all expressions)" % v)
+
+    from utilities.asset import Asset
+    total_threads = int(Asset(None)._get_cpu_threads())
+
+    if threads == "all":
+        threads = total_threads
+
+    share = (quota * period * threads / total_threads) // 100
+    tgt_val = "%d %d" % (share, period)
+
+    cur_val = get_cgroup(o, 'cpu', 'cpu.max')
+
+    if tgt_val == cur_val:
+        return
+
+    set_cgroup_value(o, 'cpu', 'cpu.max', tgt_val)
+
+def set_cpu_quota_v1(o):
     try:
         v = str(o.pg_settings["cpu_quota"])
     except (AttributeError, KeyError):
@@ -217,31 +270,49 @@ def set_mem_cgroup(o):
     # validate memory limits sanity and order adequately the resize
     # depending on increase/decrease of limits
     #
-    try:
-        cur_vmem_limit = int(get_cgroup(o, 'memory', 'memory.memsw.limit_in_bytes'))
-    except ex.Error:
-        cur_vmem_limit = None
     if mem_limit is not None and vmem_limit is not None:
         if mem_limit > vmem_limit:
             if log: log.error("pg_vmem_limit must be greater than pg_mem_limit")
             raise ex.Error
-        if cur_vmem_limit and mem_limit > cur_vmem_limit:
-            set_cgroup(o, 'memory', 'memory.memsw.limit_in_bytes', 'vmem_limit')
+
+    if UNIFIED:
+        try:
+            cur_vmem_limit = int(get_cgroup(o, 'memory', 'memory.max')) + int(get_cgroup(o, 'memory', 'memory.swap.max'))
+        except (ValueError, ex.Error):
+            cur_vmem_limit = None
+        if mem_limit is not None and vmem_limit is not None:
+            if vmem_limit < mem_limit:
+                vmem_limit = mem_limit
+            set_cgroup_value(o, 'memory', 'memory.swap.max', vmem_limit-mem_limit)
+            set_cgroup_value(o, 'memory', 'memory.max', mem_limit)
+        elif mem_limit is not None:
+            set_cgroup_value(o, 'memory', 'memory.max', mem_limit)
+        elif vmem_limit is not None:
+                if log: log.error("pg_vmem_limit must not be set without pg_mem_limit")
+                raise ex.Error
+    else:
+        try:
+            cur_vmem_limit = int(get_cgroup(o, 'memory', 'memory.memsw.limit_in_bytes'))
+        except ex.Error:
+            cur_vmem_limit = None
+        if mem_limit is not None and vmem_limit is not None:
+            if cur_vmem_limit and mem_limit > cur_vmem_limit:
+                set_cgroup(o, 'memory', 'memory.memsw.limit_in_bytes', 'vmem_limit')
+                set_cgroup(o, 'memory', 'memory.limit_in_bytes', 'mem_limit')
+            else:
+                set_cgroup(o, 'memory', 'memory.limit_in_bytes', 'mem_limit')
+                set_cgroup(o, 'memory', 'memory.memsw.limit_in_bytes', 'vmem_limit')
+        elif mem_limit is not None:
+            if cur_vmem_limit and mem_limit > cur_vmem_limit:
+                if log: log.error("pg_mem_limit must not be greater than current pg_vmem_limit (%d)"%cur_vmem_limit)
+                raise ex.Error
             set_cgroup(o, 'memory', 'memory.limit_in_bytes', 'mem_limit')
-        else:
-            set_cgroup(o, 'memory', 'memory.limit_in_bytes', 'mem_limit')
+        elif vmem_limit is not None:
+            cur_mem_limit = int(get_cgroup(o, 'memory', 'memory.limit_in_bytes'))
+            if vmem_limit < cur_mem_limit:
+                if log: log.error("pg_vmem_limit must not be lesser than current pg_mem_limit (%d)"%cur_mem_limit)
+                raise ex.Error
             set_cgroup(o, 'memory', 'memory.memsw.limit_in_bytes', 'vmem_limit')
-    elif mem_limit is not None:
-        if cur_vmem_limit and mem_limit > cur_vmem_limit:
-            if log: log.error("pg_mem_limit must not be greater than current pg_vmem_limit (%d)"%cur_vmem_limit)
-            raise ex.Error
-        set_cgroup(o, 'memory', 'memory.limit_in_bytes', 'mem_limit')
-    elif vmem_limit is not None:
-        cur_mem_limit = int(get_cgroup(o, 'memory', 'memory.limit_in_bytes'))
-        if vmem_limit < cur_mem_limit:
-            if log: log.error("pg_vmem_limit must not be lesser than current pg_mem_limit (%d)"%cur_mem_limit)
-            raise ex.Error
-        set_cgroup(o, 'memory', 'memory.memsw.limit_in_bytes', 'vmem_limit')
 
 def get_namespace(o):
     if hasattr(o, "namespace"):
@@ -294,7 +365,7 @@ def get_cgroup_relpath(o, suffix=".slice"):
             elements.append(o.rid.replace("#", ".") + suffix)
     return os.path.join(*elements)
 
-def get_cgroup_path(o, t, create=True):
+def get_cgroup_path(o, t, create=True, has_subtree=False):
     o.log.debug("get_cgroup_path : t=%s, create=%s"%(t, create))
     cgroup_mntpt = get_cgroup_mntpt(t)
     if cgroup_mntpt is None:
@@ -306,11 +377,17 @@ def get_cgroup_path(o, t, create=True):
     if not os.path.exists(cgp) and create:
         if hasattr(o, "cleanup_cgroup"):
             o.cleanup_cgroup(t)
-        create_cgroup(cgp, log=log)
+        create_cgroup(cgp, log=log, has_subtree=has_subtree)
     return cgp
 
 def remove_pg(o):
     log = o.log
+    if UNIFIED:
+        cgp = os.path.join(os.sep, "sys", "fs", "cgroup", get_cgroup_relpath(o))
+        remove_cgroup(cgp, log)
+        cgp = os.path.join(os.sep, "sys", "fs", "cgroup", get_cgroup_relpath(o, suffix=""))
+        remove_cgroup(cgp, log)
+        return
     for t in CONTROLLERS:
         cgp = os.path.join(os.sep, "sys", "fs", "cgroup", t, get_cgroup_relpath(o))
         remove_cgroup(cgp, log)
@@ -333,7 +410,14 @@ def remove_cgroup(cgp, log):
             #print("lingering %s (%s)" % (path, exc))
             pass
 
-def create_cgroup(cgp, log=None):
+def create_cgroup(cgp, log=None, has_subtree=False):
+    if UNIFIED:
+        parent_cgp = os.path.dirname(os.path.realpath(cgp))
+        if parent_cgp != "/sys/fs/cgroup":
+            try:
+                set_sysfs(parent_cgp+"/cgroup.subtree_control", "+cpuset +cpu +io +memory +pids", log=log)
+            except Exception as exc:
+                raise
     try:
         os.makedirs(cgp)
     except OSError as exc:
@@ -342,7 +426,11 @@ def create_cgroup(cgp, log=None):
         else:
             raise
     if UNIFIED:
-        set_sysfs(cgp+"/cgroup.subtree_control", "+cpuset +cpu +io +memory +pids", log=log)
+        if has_subtree:
+            try:
+                set_sysfs(cgp+"/cgroup.subtree_control", "+cpuset +cpu +io +memory +pids", log=log)
+            except Exception as exc:
+                raise
     else:
         set_sysfs(cgp+"/cgroup.clone_children", "1", log=log)
     for parm in ("cpus", "mems"):
@@ -482,13 +570,13 @@ def frozen(res):
             return True
     return False
 
-def create_pg(res):
+def create_pg(res, has_subtree=False):
     if not cgroup_capable(res):
         return
 
     _create_pg(res.svc)
     _create_pg(res.rset)
-    _create_pg(res)
+    _create_pg(res, has_subtree=has_subtree)
 
 def set_controllers_task(o):
     for controller in CONTROLLERS:
@@ -497,26 +585,34 @@ def set_controllers_task(o):
         except ex.Error:
             pass
 
-def _create_pg(o):
+def _create_pg(o, has_subtree=False):
     if o is None:
         return
     try:
         if UNIFIED:
-            set_task(o, None)
+            set_task(o, None, has_subtree=has_subtree)
+            set_cgroup(o, 'cpuset', 'cpuset.cpus', 'cpus')
+            set_cgroup(o, 'cpu', 'cpu.weight', 'cpu_shares')
+            set_cgroup(o, 'cpuset', 'cpuset.mems', 'mems')
+            set_cgroup(o, 'blkio', 'io.weight', 'blkio_weight')
+            #set_cgroup(o, 'memory', 'memory.swappiness', 'mem_swappiness')
+            #set_cgroup(o, 'memory', 'memory.oom_control', 'mem_oom_control')
+            set_mem_cgroup(o)
+            set_cpu_quota_v2(o)
         else:
             try:
                 set_task(o, 'systemd')
             except:
                 pass
-        set_controllers_task(o)
-        set_cgroup(o, 'cpuset', 'cpuset.cpus', 'cpus')
-        set_cgroup(o, 'cpu', 'cpu.shares', 'cpu_shares')
-        set_cgroup(o, 'cpuset', 'cpuset.mems', 'mems')
-        set_cgroup(o, 'blkio', 'blkio.weight', 'blkio_weight')
-        set_cgroup(o, 'memory', 'memory.swappiness', 'mem_swappiness')
-        set_cgroup(o, 'memory', 'memory.oom_control', 'mem_oom_control')
-        set_mem_cgroup(o)
-        set_cpu_quota(o)
+            set_controllers_task(o)
+            set_cgroup(o, 'cpuset', 'cpuset.cpus', 'cpus')
+            set_cgroup(o, 'cpu', 'cpu.shares', 'cpu_shares')
+            set_cgroup(o, 'cpuset', 'cpuset.mems', 'mems')
+            set_cgroup(o, 'blkio', 'blkio.weight', 'blkio_weight')
+            set_cgroup(o, 'memory', 'memory.swappiness', 'mem_swappiness')
+            set_cgroup(o, 'memory', 'memory.oom_control', 'mem_oom_control')
+            set_mem_cgroup(o)
+            set_cpu_quota_v1(o)
     except Exception as e:
         # not configured in kernel
         pass

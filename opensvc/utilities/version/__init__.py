@@ -16,7 +16,7 @@ def agent_version():
         import imp
         imp.reload(version)
         return version.version
-    except (AttributeError, UnboundLocalError):
+    except (ImportError, AttributeError, UnboundLocalError):
         pass
 
     import os
