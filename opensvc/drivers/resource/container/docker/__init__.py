@@ -828,7 +828,7 @@ class ContainerDocker(BaseContainer):
         if self.pidns:
             args = drop_option("--pid", args, drop_value=True)
             if self.pidns.startswith("container#"):
-                res = self.svc.get_resource(self.netns)
+                res = self.svc.get_resource(self.pidns)
                 if res is not None:
                     args += ["--pid=container:" + res.container_name]
                 elif errors == "raise":
@@ -839,7 +839,7 @@ class ContainerDocker(BaseContainer):
         if self.ipcns:
             args = drop_option("--ipc", args, drop_value=True)
             if self.ipcns.startswith("container#"):
-                res = self.svc.get_resource(self.netns)
+                res = self.svc.get_resource(self.ipcns)
                 if res is not None:
                     args += ["--ipc=container:" + res.container_name]
                 elif errors == "raise":
