@@ -1,3 +1,4 @@
+import os
 import core.status
 import core.exceptions as ex
 import datetime
@@ -119,10 +120,10 @@ def parse_last(s):
         return
 
 def devid_of(devpath):
-    cmd = ["syminq", "-pdevfile", devpath, "-output", "xml_e"]
+    cmd = ["syminq", "-pdevfile", os.path.realpath(devpath), "-output", "xml_e"]
     out, err, ret = justcall(cmd)
     if ret != 0:
-        raise ex.Error(err)
+        raise ex.Error("%s: %s" % (devpath, err))
     l = parse_syminq(out)
     return l[0]["dev_name"]
 
