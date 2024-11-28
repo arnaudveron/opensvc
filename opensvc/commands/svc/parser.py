@@ -41,7 +41,7 @@ OPT.update({
              "from the api."),
     "downto": Option(
         "--downto", default=None,
-        action="store", dest="upto",
+        action="store", dest="downto",
         help="Stop the service down to the specified rid or driver group."),
     "duration": Option(
         "--duration", default=None,
