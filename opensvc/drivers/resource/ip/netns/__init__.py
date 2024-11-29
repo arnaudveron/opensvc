@@ -180,6 +180,11 @@ class IpNetns(IpHost):
                 ips.append(l[1])
         return ips
 
+    def activate_netns_ipv6(self):
+        if ":" in self.addr:
+            cmd = [Env.syspaths.nsenter, "--net="+self.netns, "sysctl" , "-w", "net.ipv6.conf."+self.nsdev+".disable_ipv6=0"]
+            self.vcall(cmd)
+
     @lazy
     def guest_dev(self):
         """
@@ -340,6 +345,7 @@ class IpNetns(IpHost):
                 return ret, out, err
 
             # plumb the ip
+            self.activate_netns_ipv6()
             cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ip", "addr", "add", "%s/%s" % (self.addr, to_cidr(self.netmask)), "dev", self.final_guest_dev]
             ret, out, err = self.vcall(cmd)
             if ret != 0:
@@ -417,6 +423,7 @@ class IpNetns(IpHost):
                 return ret, out, err
 
         # plumb ip
+        self.activate_netns_ipv6()
         cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ip", "addr", "add", self.addr+"/"+to_cidr(self.netmask), "dev", self.final_guest_dev]
         ret, out, err = self.vcall(cmd)
         if ret != 0:
@@ -466,6 +473,7 @@ class IpNetns(IpHost):
             self.set_macaddr()
 
         # plumb ip
+        self.activate_netns_ipv6()
         cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ip", "addr", "add", self.addr+"/"+to_cidr(self.netmask), "dev", self.final_guest_dev]
         ret, out, err = self.vcall(cmd)
         if ret != 0:
@@ -509,6 +517,7 @@ class IpNetns(IpHost):
                 return ret, out, err
 
         # plumb the ip
+        self.activate_netns_ipv6()
         cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ip", "addr", "add", "%s/%s" % (self.addr, to_cidr(self.netmask)), "dev", self.final_guest_dev]
         ret, out, err = self.vcall(cmd)
         if ret != 0:
@@ -555,6 +564,7 @@ class IpNetns(IpHost):
             self.set_macaddr()
 
         # plumb the ip
+        self.activate_netns_ipv6()
         cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ip", "addr", "add", "%s/%s" % (self.addr, to_cidr(self.netmask)), "dev", self.final_guest_dev]
         ret, out, err = self.vcall(cmd)
         if ret != 0:
