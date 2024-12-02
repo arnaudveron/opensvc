@@ -162,6 +162,9 @@ class IpNetns(IpHost):
         )
 
     def has_nsdev(self):
+        if not self.nsdev:
+            # let start configure a new nsdev
+            return False
         cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ip" , "link", "ls", "dev", self.nsdev]
         out, err, ret = justcall(cmd)
         if ret == 0:
@@ -169,6 +172,9 @@ class IpNetns(IpHost):
         return False
 
     def nsdev_ips(self):
+        if not self.nsdev:
+            # let stop unconfigure the auto-allocated and resource-dedicated nsdev
+            return []
         cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ip" , "addr", "ls", "dev", self.nsdev]
         out, err, ret = justcall(cmd)
         if ret != 0:
@@ -182,7 +188,7 @@ class IpNetns(IpHost):
 
     def activate_netns_ipv6(self):
         if ":" in self.addr:
-            cmd = [Env.syspaths.nsenter, "--net="+self.netns, "sysctl" , "-w", "net.ipv6.conf."+self.nsdev+".disable_ipv6=0"]
+            cmd = [Env.syspaths.nsenter, "--net="+self.netns, "sysctl" , "-w", "net.ipv6.conf."+self.final_guest_dev+".disable_ipv6=0"]
             self.vcall(cmd)
 
     @lazy
