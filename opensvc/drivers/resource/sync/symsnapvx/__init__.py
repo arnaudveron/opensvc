@@ -196,6 +196,7 @@ class SyncSymsnapvx(Sync):
           ["secure", str(self.secure)],
           ["name", str(self.name)],
           ["symid", str(self.symid)],
+          ["devids", ",".join(self.merged_devs)],
         ]
         snap = self.get_snap()
         if snap:
