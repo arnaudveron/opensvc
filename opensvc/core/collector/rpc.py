@@ -811,6 +811,11 @@ class CollectorRpc(object):
         if data.get("encap", False):
             self.log.info("skip push status for encap object %s", svcname)
             return
+        try:
+            # push cluster_id to allow reconcile node cluster_id after join
+            data["cluster_id"] = self.node.cluster_id
+        except:
+            pass
         args = [svcname, json.dumps(data), (self.node.collector_env.uuid, Env.nodename)]
         self.proxy.push_status(*args)
 
