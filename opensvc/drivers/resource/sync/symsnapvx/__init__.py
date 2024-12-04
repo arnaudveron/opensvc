@@ -119,13 +119,15 @@ def parse_last(s):
     except AttributeError:
         return
 
-def devid_of(devpath):
+def devid_of(symid, devpath):
     cmd = ["syminq", "-pdevfile", os.path.realpath(devpath), "-output", "xml_e"]
     out, err, ret = justcall(cmd)
     if ret != 0:
         raise ex.Error("%s: %s" % (devpath, err))
     l = parse_syminq(out)
-    return l[0]["dev_name"]
+    for e in l:
+        if e["symid"] == symid:
+            return e["dev_name"]
 
 """
     <?xml version="1.0" standalone="yes" ?>
@@ -212,7 +214,9 @@ class SyncSymsnapvx(Sync):
         for res in self.svc.get_resources():
             if res.rid in self.devs_from:
                 for devpath in res.sub_devs():
-                    l.append(devid_of(devpath))
+                    devid = devid_of(self.symid, devpath)
+                    if devid is not None:
+                        l.append(devid)
         return sorted(list(set(l)))
 
     def vx_cmd(self):
