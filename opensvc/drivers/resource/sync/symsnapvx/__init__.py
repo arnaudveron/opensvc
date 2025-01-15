@@ -120,7 +120,10 @@ def parse_last(s):
         return
 
 def devid_of(symid, devpath):
-    cmd = ["syminq", "-pdevfile", os.path.realpath(devpath), "-output", "xml_e"]
+    from env import Env
+    if Env.sysname == "Linux":
+        devpath = os.path.realpath(devpath)
+    cmd = ["syminq", "-pdevfile", devpath, "-output", "xml_e"]
     out, err, ret = justcall(cmd)
     if ret != 0:
         raise ex.Error("%s: %s" % (devpath, err))
