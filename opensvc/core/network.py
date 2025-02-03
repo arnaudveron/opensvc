@@ -170,6 +170,7 @@ class NetworksMixin(object):
                 if config["type"] == "routed_bridge":
                     config["subnets"] = self.oget_scopes(section, "subnet", rtype=config["type"])
                     config["gateway"] = self.oget_scopes(section, "gateway", rtype=config["type"])
+                    config["tunnel_mode"] = self.oget(section, "tunnel_mode", rtype=config["type"])
             if not config:
                 continue
             if config.get("network") in ("None", "none", None):
@@ -298,6 +299,7 @@ class NetworksMixin(object):
                     "brip": self.network_bridge_ip(name, config=config),
                     "table": table,
                     "tunnel": config["tunnel"],
+                    "tunnel_mode": config.get("tunnel_mode", ""),
                 })
         return routes
 

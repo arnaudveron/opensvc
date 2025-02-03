@@ -1368,6 +1368,14 @@ Arbitrators can be tested using :cmd:`om node ping --node <arbitrator name>`.
     },
     {
         "section": "network",
+        "rtype": "routed_bridge",
+        "keyword": "tunnel_mode",
+        "default": "ipip",
+        "candidates": ["ipip", "gre"],
+        "text": "The ip tunnel mode. gre can tunnel mcast ip and ipv6 at the price of a 24B header, ipip can only tunnel ipv4 but with a 20B header. Note, some OVH servers combinations don't support ipip but work with gre."
+    },
+    {
+        "section": "network",
         "rtype": ["bridge", "routed_bridge"],
         "keyword": "network",
         "default": "10.22.0.0/16",

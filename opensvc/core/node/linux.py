@@ -136,7 +136,7 @@ class Node(BaseNode):
                 self.log.info(line)
         elif tunnel == "always" or "invalid gateway" in err or "is unreachable" in err:
             name = self.network_tunnel_ipip_name(node, gw)
-            tun = self.network_tunnel_ipip_add(name, local_ip, gw)
+            tun = self.network_tunnel_ipip_add(name, local_ip, gw, kwargs.get("tunnel_mode", ""))
             self.network_tunnel_ipip_route_add(ipcmd, dst, tun["dev"], brip.split("/", 1)[0], table)
         else:
             self.log.info(" ".join(cmd))
@@ -205,14 +205,13 @@ class Node(BaseNode):
             name = "tun" + dst.split("/", 1)[0].replace(".", "")
         return name
 
-    def network_tunnel_ipip_add(self, name, src, dst):
+    def network_tunnel_ipip_add(self, name, src, dst, mode):
         src_dev = self.network_ip_intf(src)
-        if ":" in dst:
-            ipcmd = ["ip", "-6"]
+        ipcmd = ["ip"]
+        if mode == "ipip" and ":" in dst:
+            # ipip tunnel don't support ipv6, upgrade to ip6ip6
+            ipcmd += ["-6"]
             mode = "ip6ip6"
-        else:
-            ipcmd = ["ip"]
-            mode = "ipip"
         cmd = ipcmd + ["tunnel", "show", name]
         out, err, ret = justcall(cmd)
         if out:
@@ -226,7 +225,7 @@ class Node(BaseNode):
         if ret == 0:
             try:
                 current_name = out.splitlines()[0].split(":")[0]
-                if current_name != name:
+                if current_name not in ("gre0", "tunl0") and current_name != name:
                     self.vcall(["ip", "tunnel", "delete", current_name])
             except IndexError:
                 pass
