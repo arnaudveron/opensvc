@@ -208,10 +208,11 @@ class Node(BaseNode):
     def network_tunnel_ipip_add(self, name, src, dst, mode):
         src_dev = self.network_ip_intf(src)
         ipcmd = ["ip"]
-        if mode == "ipip" and ":" in dst:
-            # ipip tunnel don't support ipv6, upgrade to ip6ip6
+        if ":" in dst:
             ipcmd += ["-6"]
-            mode = "ip6ip6"
+            if mode == "ipip":
+                # ipip tunnel don't support ipv6, upgrade to ip6ip6
+                mode = "ip6ip6"
         cmd = ipcmd + ["tunnel", "show", name]
         out, err, ret = justcall(cmd)
         if out:
