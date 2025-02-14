@@ -274,6 +274,8 @@ class ContainerKvm(BaseContainer):
             raise ex.EncapUnjoinable("undefined rcmd/runmethod in resource %s" % self.rid)
 
     def operational(self):
+        if self.guestos == "windows":
+            return True
         if self.qga:
             return self.qga_operational()
         else:

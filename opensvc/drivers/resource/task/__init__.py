@@ -62,9 +62,9 @@ KEYWORDS = [
     },
     {
         "keyword": "check",
-        "candidates": [None, "last_run"],
+        "candidates": [None, "last_run", "last_run_warn"],
         "at": True,
-        "text": "If set to 'last_run', the last run retcode is used to report a task resource status. If not set (default), the status of a task is always n/a.",
+        "text": "If set to 'last_run', the last run retcode is used to report a task resource status. If set to 'last_run_warn', the last run error retcode is displayed as a resource warning. If not set (default), the status of a task is always n/a.",
         "example": "last_run"
     },
     {
@@ -175,6 +175,13 @@ class BaseTask(Resource):
             self.command,
             self.user
         )
+
+    def _status_info(self):
+        data = {}
+        xc = self.read_last_run_retcode()
+        if xc is not None:
+            data["last_run_exitcode"] = xc
+        return data
 
     def _info(self):
         data = [
@@ -348,6 +355,11 @@ class BaseTask(Resource):
                 self.status_log("last run failed", "error")
                 return core.status.DOWN
             return core.status.UP
+        elif self.checker == "last_run_warn":
+            ret = self.read_last_run_retcode()
+            if ret is not None:
+                self.status_log("last run exitcode: %d" % ret, "warn")
+        return core.status.NA
 
     def is_provisioned(self, refresh=False):
         return True
