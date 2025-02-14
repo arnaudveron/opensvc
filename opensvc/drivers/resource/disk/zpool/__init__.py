@@ -11,7 +11,7 @@ from core.objects.svcdict import KEYS
 from env import Env
 from utilities.lazy import lazy
 from utilities.lock import cmlock
-from utilities.proc import justcall, drop_option
+from utilities.proc import justcall, drop_option, call_log
 from utilities.subsystems.zfs import zpool_devs, zpool_getprop, zpool_setprop
 
 DRIVER_GROUP = "disk"
@@ -401,10 +401,21 @@ class DiskZpool(BaseDisk):
             if ret != 0:
                 self.log.info("already unprovisioned")
                 return
+
         cmd = ["zpool", "destroy", "-f", self.name]
-        ret, _, _ = self.vcall(cmd)
-        if ret != 0:
-            raise ex.Error
+        self.log.info(" ".join(cmd))
+
+        def destroy():
+            out, err, ret = justcall(cmd)
+            if "pool is busy" in err:
+                return False
+            if ret != 0:
+                raise ex.Error
+            call_log(out, self.log, "info")
+            call_log(err, self.log, "error")
+            return True
+
+        self.wait_for_fn(destroy, 5, 1, "failed to destroy the pool after 5 tries at 1 second interval: pool is busy")
         self.svc.node.unset_lazy("devtree")
 
     def pre_unprovision_stop(self):
