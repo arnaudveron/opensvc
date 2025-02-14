@@ -80,7 +80,7 @@ class Pool(BasePool):
                 "rtype": "disk",
                 "type": "drbd",
                 "res": name,
-                "disk": "/dev/%s/%s" % (self.zpool, name),
+                "disk": "/dev/zvol/%s/%s" % (self.zpool, name),
                 "standby": True,
             }
             if self.network:
