@@ -581,7 +581,7 @@ class Scheduler(shared.OsvcThread):
                     last = self.local_last(sig, p.fname, svc)
                     try:
                         cluster_last = lasts[p.section][action]["last"]
-                        if not last or cluster_last > last:
+                        if not last or (cluster_last is not None and cluster_last > last):
                             # local last may be more up-to-date due to CRM task runs notifications
                             last = cluster_last
                     except KeyError:
