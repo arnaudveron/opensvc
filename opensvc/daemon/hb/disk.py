@@ -132,8 +132,16 @@ class HbDisk(Hb):
 
     def meta_read_slot(self, slot, fo=None):
         offset = self.meta_slot_offset(slot)
-        fo.seek(offset, os.SEEK_SET)
-        fo.readinto(self.meta_slot_buff)
+        try:
+            fo.seek(offset, os.SEEK_SET)
+        except Exception as exc:
+            self.log.error("seek offset %d: %s" % (offset, exc))
+            return None
+        try:
+            fo.readinto(self.meta_slot_buff)
+        except Exception as exc:
+            self.log.error("readinto from offset %d: %s" % (offset, exc))
+            return None
         try:
             return bdecode(self.meta_slot_buff[:mmap.PAGESIZE])
         except Exception as exc:
@@ -164,8 +172,14 @@ class HbDisk(Hb):
 
     def read_slot(self, slot, fo=None):
         offset = self.slot_offset(slot)
-        fo.seek(offset, os.SEEK_SET)
-        fo.readinto(self.slot_buff)
+        try:
+            fo.seek(offset, os.SEEK_SET)
+        except Exception as exc:
+            raise ex.AbortAction("seek offset %d: %s" % (offset, exc))
+        try:
+            fo.readinto(self.slot_buff)
+        except Exception as exc:
+            raise ex.AbortAction("readinto from offset %d: %s" % (offset, exc))
         data = bdecode(self.slot_buff[:])
         end = data.index("\0")
         return data[:end]
@@ -177,9 +191,18 @@ class HbDisk(Hb):
         self.slot_buff.seek(0)
         self.slot_buff.write(data)
         offset = self.slot_offset(slot)
-        fo.seek(offset, os.SEEK_SET)
-        fo.write(self.slot_buff)
-        fo.flush()
+        try:
+            fo.seek(offset, os.SEEK_SET)
+        except Exception as exc:
+            raise ex.AbortAction("seek to offset %d: %s" % (offset, exc))
+        try:
+            fo.write(self.slot_buff)
+        except Exception as exc:
+            raise ex.AbortAction("write at offset %d: %s" % (offset, exc))
+        try:
+            fo.flush()
+        except Exception as exc:
+            raise ex.AbortAction("flush written at offset %d: %s" % (offset, exc))
 
     def load_peer_config(self, fo=None, verbose=True):
         for nodename in self.hb_nodes:
