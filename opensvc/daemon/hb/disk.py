@@ -221,7 +221,11 @@ class HbDisk(Hb):
                 self.log.info("analysed slots %d, unknown slot for the following nodes: %s", slot, missing)
                 return
             try:
-                nodename = buff[:buff.index("\0")]
+                marker_pos = buff.index("\0")
+                nodename = buff[:marker_pos]
+            except ValueError:
+                # buff.index may raise
+                continue
             except IndexError:
                 continue
             if nodename not in self.peer_config:
