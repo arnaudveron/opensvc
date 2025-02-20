@@ -96,6 +96,8 @@ class HbDisk(Hb):
             self.flags = new_flags
             self.peer_config = {}
             self.log.info("set dev=%s", self.dev)
+            # Take time to explain storage area
+            self.log.info("storage area is metadata_size + (max_slots x slot_size): %d + (%d x %d)\n", self.METASIZE, self.MAX_SLOTS, self.SLOTSIZE)
 
         with self.hb_fo() as fo:
             self.load_peer_config(fo=fo)
