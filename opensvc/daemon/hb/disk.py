@@ -123,7 +123,7 @@ class HbDisk(Hb):
             try:
                 os.fsync(fd)
             except OSError as exc:
-                self.duplog("error", "%(exc)s", exc=str(exc), nodename="")
+                self.duplog("error", "fsync file descriptor for %(dev)s %(exc)s", dev=self.dev, exc=str(exc), nodename="")
             fo.close()
 
     @staticmethod
@@ -205,14 +205,20 @@ class HbDisk(Hb):
             raise ex.AbortAction("flush written at offset %d: %s" % (offset, exc))
 
     def load_peer_config(self, fo=None, verbose=True):
+        missing_nodes = {}
         for nodename in self.hb_nodes:
             if nodename not in self.peer_config:
                 self.peer_config[nodename] = {
                     "slot": -1,
                 }
+                missing_nodes[nodename] = True
+            elif self.peer_config[nodename]["slot"] < 0:
+                missing_nodes[nodename] = True
         for slot in range(self.MAX_SLOTS):
             buff = self.meta_read_slot(slot, fo=fo)
             if buff is None or buff[0] == "\0":
+                missing = ", ".join([k for k in missing_nodes.keys()])
+                self.log.info("analysed slots %d, unknown slot for the following nodes: %s", slot, missing)
                 return
             try:
                 nodename = buff[:buff.index("\0")]
@@ -230,6 +236,11 @@ class HbDisk(Hb):
             if verbose:
                 self.log.info("detect slot %d for node %s", slot, nodename)
             self.peer_config[nodename]["slot"] = slot
+            if nodename in missing_nodes:
+                del missing_nodes[nodename]
+            if len(missing_nodes) == 0:
+                self.log.info("analysed slots %d, got slot informations for all nodes", slot)
+                return
 
     def allocate_slot(self):
         for slot in range(self.MAX_SLOTS):
