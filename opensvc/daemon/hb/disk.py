@@ -144,9 +144,18 @@ class HbDisk(Hb):
         self.meta_slot_buff.seek(0)
         self.meta_slot_buff.write(data)
         offset = self.meta_slot_offset(slot)
-        fo.seek(offset, os.SEEK_SET)
-        fo.write(self.meta_slot_buff)
-        fo.flush()
+        try:
+            fo.seek(offset, os.SEEK_SET)
+        except Exception as exc:
+            raise ex.AbortAction("seek offset %d: %s" % (offset, exc))
+        try:
+            fo.write(self.meta_slot_buff)
+        except Exception as exc:
+            raise ex.AbortAction("write at offset %d: %s" % (offset, exc))
+        try:
+            fo.flush()
+        except Exception as exc:
+            raise ex.AbortAction("flush written at offset %d: %s" % (offset, exc))
 
     def slot_offset(self, slot):
         return self.METASIZE + slot * self.SLOTSIZE
@@ -203,14 +212,20 @@ class HbDisk(Hb):
                 buff = self.meta_read_slot(slot, fo=fo)
                 if buff is None or buff[0] != "\0":
                     continue
-                self.peer_config[Env.nodename]["slot"] = slot
+                self.log.info("candidate slot %d for %s", slot, Env.nodename)
                 try:
                     nodename = bytes(Env.nodename, "utf-8")
                 except TypeError:
                     nodename = Env.nodename
-                self.meta_write_slot(slot, nodename, fo=fo)
-                self.log.info("allocated slot %d", slot)
+                try:
+                    self.meta_write_slot(slot, nodename, fo=fo)
+                    self.peer_config[Env.nodename]["slot"] = slot
+                except Exception as exc:
+                    self.log.error("error writing metadata to candidate slot %d: %s", slot, exc)
+                    raise exc
+                return
             break
+        self.log.error("unable to allocate slot")
 
 
 class HbDiskTx(HbDisk):
