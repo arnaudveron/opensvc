@@ -31,15 +31,13 @@ class Pool(BasePool):
 
     def delete_disk(self, name=None, disk_id=None):
         lock_id = None
-        result = {}
         try:
             lock_id = self.node._daemon_lock(LOCK_NAME, timeout=LOCK_TIMEOUT, on_error="raise")
             self.log.info("lock acquired: name=%s id=%s", LOCK_NAME, lock_id)
-            result = self.array.del_iscsi_zvol(name=name, volume=self.diskgroup)
+            return self.array.del_iscsi_zvol(name=name, volume=self.diskgroup)
         finally:
             self.node._daemon_unlock(LOCK_NAME, lock_id)
             self.log.info("lock released: name=%s id=%s", LOCK_NAME, lock_id)
-            return result
 
     def create_disk(self, name, size, nodes=None):
         mappings = self.get_mappings(nodes)
