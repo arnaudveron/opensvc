@@ -596,7 +596,10 @@ class IpNetns(IpHost):
         if ret != 0:
             return ret, out, err
 
-        cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ip", "route", "list", "default"]
+        if ":" in self.addr:
+            cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ip", "-6", "route", "list", "default"]
+        else:
+            cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ip", "route", "list", "default"]
         ret, out, err = self.call(cmd, errlog=False)
         if out.startswith("default via"):
             pass
