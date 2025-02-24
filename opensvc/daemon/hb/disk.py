@@ -96,6 +96,8 @@ class HbDisk(Hb):
             self.flags = new_flags
             self.peer_config = {}
             self.log.info("set dev=%s", self.dev)
+            # Take time to explain storage area
+            self.log.info("storage area is metadata_size + (max_slots x slot_size): %d + (%d x %d)\n", self.METASIZE, self.MAX_SLOTS, self.SLOTSIZE)
 
         with self.hb_fo() as fo:
             self.load_peer_config(fo=fo)
@@ -121,7 +123,7 @@ class HbDisk(Hb):
             try:
                 os.fsync(fd)
             except OSError as exc:
-                self.duplog("error", "%(exc)s", exc=str(exc), nodename="")
+                self.duplog("error", "fsync file descriptor for %(dev)s %(exc)s", dev=self.dev, exc=str(exc), nodename="")
             fo.close()
 
     @staticmethod
@@ -130,8 +132,16 @@ class HbDisk(Hb):
 
     def meta_read_slot(self, slot, fo=None):
         offset = self.meta_slot_offset(slot)
-        fo.seek(offset, os.SEEK_SET)
-        fo.readinto(self.meta_slot_buff)
+        try:
+            fo.seek(offset, os.SEEK_SET)
+        except Exception as exc:
+            self.log.error("seek offset %d: %s" % (offset, exc))
+            return None
+        try:
+            fo.readinto(self.meta_slot_buff)
+        except Exception as exc:
+            self.log.error("readinto from offset %d: %s" % (offset, exc))
+            return None
         try:
             return bdecode(self.meta_slot_buff[:mmap.PAGESIZE])
         except Exception as exc:
@@ -144,17 +154,32 @@ class HbDisk(Hb):
         self.meta_slot_buff.seek(0)
         self.meta_slot_buff.write(data)
         offset = self.meta_slot_offset(slot)
-        fo.seek(offset, os.SEEK_SET)
-        fo.write(self.meta_slot_buff)
-        fo.flush()
+        try:
+            fo.seek(offset, os.SEEK_SET)
+        except Exception as exc:
+            raise ex.AbortAction("seek offset %d: %s" % (offset, exc))
+        try:
+            fo.write(self.meta_slot_buff)
+        except Exception as exc:
+            raise ex.AbortAction("write at offset %d: %s" % (offset, exc))
+        try:
+            fo.flush()
+        except Exception as exc:
+            raise ex.AbortAction("flush written at offset %d: %s" % (offset, exc))
 
     def slot_offset(self, slot):
         return self.METASIZE + slot * self.SLOTSIZE
 
     def read_slot(self, slot, fo=None):
         offset = self.slot_offset(slot)
-        fo.seek(offset, os.SEEK_SET)
-        fo.readinto(self.slot_buff)
+        try:
+            fo.seek(offset, os.SEEK_SET)
+        except Exception as exc:
+            raise ex.AbortAction("seek offset %d: %s" % (offset, exc))
+        try:
+            fo.readinto(self.slot_buff)
+        except Exception as exc:
+            raise ex.AbortAction("readinto from offset %d: %s" % (offset, exc))
         data = bdecode(self.slot_buff[:])
         end = data.index("\0")
         return data[:end]
@@ -166,22 +191,41 @@ class HbDisk(Hb):
         self.slot_buff.seek(0)
         self.slot_buff.write(data)
         offset = self.slot_offset(slot)
-        fo.seek(offset, os.SEEK_SET)
-        fo.write(self.slot_buff)
-        fo.flush()
+        try:
+            fo.seek(offset, os.SEEK_SET)
+        except Exception as exc:
+            raise ex.AbortAction("seek to offset %d: %s" % (offset, exc))
+        try:
+            fo.write(self.slot_buff)
+        except Exception as exc:
+            raise ex.AbortAction("write at offset %d: %s" % (offset, exc))
+        try:
+            fo.flush()
+        except Exception as exc:
+            raise ex.AbortAction("flush written at offset %d: %s" % (offset, exc))
 
     def load_peer_config(self, fo=None, verbose=True):
+        missing_nodes = {}
         for nodename in self.hb_nodes:
             if nodename not in self.peer_config:
                 self.peer_config[nodename] = {
                     "slot": -1,
                 }
+                missing_nodes[nodename] = True
+            elif self.peer_config[nodename]["slot"] < 0:
+                missing_nodes[nodename] = True
         for slot in range(self.MAX_SLOTS):
             buff = self.meta_read_slot(slot, fo=fo)
             if buff is None or buff[0] == "\0":
+                missing = ", ".join([k for k in missing_nodes.keys()])
+                self.log.info("analysed slots %d, unknown slot for the following nodes: %s", slot, missing)
                 return
             try:
-                nodename = buff[:buff.index("\0")]
+                marker_pos = buff.index("\0")
+                nodename = buff[:marker_pos]
+            except ValueError:
+                # buff.index may raise
+                continue
             except IndexError:
                 continue
             if nodename not in self.peer_config:
@@ -196,6 +240,11 @@ class HbDisk(Hb):
             if verbose:
                 self.log.info("detect slot %d for node %s", slot, nodename)
             self.peer_config[nodename]["slot"] = slot
+            if nodename in missing_nodes:
+                del missing_nodes[nodename]
+            if len(missing_nodes) == 0:
+                self.log.info("analysed slots %d, got slot informations for all nodes", slot)
+                return
 
     def allocate_slot(self):
         for slot in range(self.MAX_SLOTS):
@@ -203,14 +252,20 @@ class HbDisk(Hb):
                 buff = self.meta_read_slot(slot, fo=fo)
                 if buff is None or buff[0] != "\0":
                     continue
-                self.peer_config[Env.nodename]["slot"] = slot
+                self.log.info("candidate slot %d for %s", slot, Env.nodename)
                 try:
                     nodename = bytes(Env.nodename, "utf-8")
                 except TypeError:
                     nodename = Env.nodename
-                self.meta_write_slot(slot, nodename, fo=fo)
-                self.log.info("allocated slot %d", slot)
+                try:
+                    self.meta_write_slot(slot, nodename, fo=fo)
+                    self.peer_config[Env.nodename]["slot"] = slot
+                except Exception as exc:
+                    self.log.error("error writing metadata to candidate slot %d: %s", slot, exc)
+                    raise exc
+                return
             break
+        self.log.error("unable to allocate slot")
 
 
 class HbDiskTx(HbDisk):
