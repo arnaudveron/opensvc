@@ -117,7 +117,7 @@ class Hp3par(object):
         values = {
           'array' : self.name,
           'cmd' : cmd,
-          'path' : self.path,
+          'svcname' : self.path,
           'uuid' : self.uuid,
         }
 
