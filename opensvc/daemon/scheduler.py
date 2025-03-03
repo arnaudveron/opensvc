@@ -13,7 +13,7 @@ import daemon.shared as shared
 import core.exceptions as ex
 import core.logger
 from env import Env
-from utilities.cache import purge_cache_session
+from utilities.cache import purge_cache_session, purge_cache_expired
 from utilities.converters import print_duration
 from utilities.lazy import lazy, unset_lazy
 
@@ -21,6 +21,7 @@ from utilities.lazy import lazy, unset_lazy
 MIN_PARALLEL = 6
 MIN_OVERLOADED_PARALLEL = 2
 JANITOR_PROCS_INTERVAL = 0.95
+PURGE_INTERVAL = 60*60*6
 SCHEDULE_INTERVAL = 10
 DEQUEUE_INTERVAL = 5
 JANITOR_CERTS_INTERVAL = 3600
@@ -117,6 +118,7 @@ class Scheduler(shared.OsvcThread):
     def do(self):
         self.reload_config()
         last = 0
+        last_purge = 0
         while True:
             if self.stopped():
                 break
@@ -124,6 +126,10 @@ class Scheduler(shared.OsvcThread):
             now = time.time()
             done = self.janitor_procs()
             self.janitor_run_done()
+            if not last_purge or last_purge + PURGE_INTERVAL <= now:
+                self.log.info("purge expired sessions cache")
+                purge_cache_expired()
+                last_purge = now
             if done or last + SCHEDULE_INTERVAL <= now or shared.SCHED_RECONF.is_set():
                 shared.SCHED_RECONF.clear()
                 last = now
