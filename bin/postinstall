@@ -151,17 +151,6 @@ def install_cron():
     else:
         return install_cron_unix()
 
-def install_winservice():
-    if sysname != 'Windows':
-        return
-    logit("begin")
-    logit("install OpenSVC agent winservice", stdout=True)
-    schedstop()
-    time.sleep(3)
-    schedremove()
-    schedinstall()
-    schedstart()
-
 def schedremove():
     logit("begin")
     cmd = ' remove'
@@ -778,7 +767,7 @@ def install_rc():
             logit("arch with systemd")
             copyrc = False
             activate = activate_systemd
-    elif reldata["ID"] in ("sles", "caasp", "opensuse-leap") or os.path.exists('/etc/SuSE-release'):
+    elif reldata["ID"] in ("sles", "caasp", "opensuse-leap", "opensuse-tumbleweed") or os.path.exists('/etc/SuSE-release'):
         rc = '/etc/init.d/opensvc'
         params = '/etc/sysconfig/opensvc'
         src = os.path.join(pathini, 'opensvc.init.suse')
@@ -1197,41 +1186,6 @@ def install_link(source, target):
     except:
         logit("issue met while trying to symlink src %s with tgt %s"%(source, target))
 
-def install_pythonlink():
-    logit("begin")
-    if sysname == 'Windows':
-        return install_pythonlink_windows()
-    else:
-        return
-
-
-def install_pythonlink_windows():
-    logit("begin")
-    logit("before appending pathlib to syspath")
-    logit(os.environ["PATH"])
-    sys.path = [pathlib] + sys.path
-    logit("after appending pathlib to syspath")
-    logit(os.environ["PATH"])
-    try:
-        from rcUtilitiesWindows import get_registry_value
-    except ImportError:
-        return
-    logit("before reading installfolder in registry")
-    try:
-        installfolder = get_registry_value('HKEY_CURRENT_USER', 'Software\\OpenSVC', 'path')
-    except:
-        logit("issue met while trying to read path into registry HKCU/Software/OpenSVC/path", stderr=True)
-        sys.exit(1)
-
-    installfolder = installfolder.rstrip('\\')
-    logit("installfolder = <"+installfolder+">")
-    osvcenv = os.path.join(installfolder, 'osvcenv.cmd')
-    content = '@echo off\nset OSVCROOT='+installfolder+'\nset OSVCPYTHONROOT=%OSVCROOT%\\python\nset PYTHONPATH=%OSVCROOT%\\lib\nset OSVCPYTHONEXEC=%OSVCPYTHONROOT%\\python.exe\ncall inpath.cmd OSVCPYTHONROOT'
-    logit(content)
-    f = open(osvcenv, 'w')
-    f.write(content)
-    f.close()
-
 def move_host_mode():
     logit("begin")
     hm = os.path.join(pathvar, 'host_mode')
@@ -1586,7 +1540,6 @@ try:
     install_etc_path()
     install_bash_completion()
     move_host_mode()
-    install_pythonlink()
     nodeconf_params()
     purge_collector_api_cache()
     purge_collector_rpc_method_cache()
