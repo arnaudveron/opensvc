@@ -2813,6 +2813,14 @@ class Monitor(shared.OsvcThread, MonitorObjectOrchestratorManualMixin):
             if with_waiters and status.startswith("wait"):
                 return nodename
 
+    def instance_in_state(self, path, state):
+        """
+        Return the nodename of the first instance in the specified state.
+        """
+        for nodename, instance in self.get_service_instances(path).items():
+            if instance["monitor"].get("status") == state:
+                return nodename
+
     def peer_start_failed(self, path):
         """
         Return the nodename of the first peer with the service in a start failed
@@ -3691,6 +3699,11 @@ class Monitor(shared.OsvcThread, MonitorObjectOrchestratorManualMixin):
                 return
             if smon.placement == "none":
                 self.set_smon(path, global_expect="unset")
+            if self.instance_in_state(path, "provision failed"):
+                # if a blocking_provision trigger failed, do not unfreeze,
+                # even if opensvc considers all resources as correctly provisioned
+                self.set_smon(path, global_expect="unset")
+                return
             if agg.avail in ("up", "n/a"):
                 # provision success, thaw
                 self.set_smon(path, global_expect="thawed")
