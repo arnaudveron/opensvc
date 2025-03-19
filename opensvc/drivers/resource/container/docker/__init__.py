@@ -45,6 +45,12 @@ KEYWORDS = [
         "text": "Run container in background. Set to ``false`` only for init containers, alongside :kw:`start_timeout` and the :c-tag:`nostatus` tag.",
     },
     {
+        "keyword": "read_only",
+        "at": True,
+        "convert": "tristate",
+        "text": "Mount the container's root filesystem as read only.",
+    },
+    {
         "keyword": "entrypoint",
         "at": True,
         "text": "The script or binary executed in the container. Args must be set in :kw:`command`.",
@@ -333,6 +339,7 @@ class ContainerDocker(BaseContainer):
                  run_args=None,
                  detach=True,
                  entrypoint=None,
+                 read_only=None,
                  rm=None,
                  user=None,
                  netns=None,
@@ -366,6 +373,7 @@ class ContainerDocker(BaseContainer):
         self.run_command = run_command
         self.run_args = run_args
         self.detach = detach
+        self.read_only = read_only
         self.entrypoint = entrypoint
         self.rm = rm
         self.user = user
@@ -864,6 +872,11 @@ class ContainerDocker(BaseContainer):
             args = drop_option("--privileged", args, drop_value=False)
         if self.privileged:
             args += ["--privileged"]
+
+        if self.read_only is not None:
+            args = drop_option("--read-only", args, drop_value=False)
+        if self.read_only:
+            args += ["--read-only"]
 
         if self.interactive is not None:
             args = drop_option("--interactive", args, drop_value=False)
