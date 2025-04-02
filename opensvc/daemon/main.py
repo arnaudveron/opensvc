@@ -33,6 +33,9 @@ from utilities.lazy import lazy, unset_lazy
 # node monitor status where start_threads is allowed
 START_THREADS_ALLOWED_NMON_STATUS = (None, "idle", "init", "rejoin", "draining")
 
+# track daemon pids for osvcd pid check
+parent_pids = []
+
 try:
     from utilities.os.linux import set_tname
 except (ImportError, OSError):
@@ -84,9 +87,15 @@ def fork(func, args=None, kwargs=None):
     if kwargs is None:
         kwargs = {}
 
+    # main pid
+    parent_pids.append(os.getpid())
+
     if os.fork() > 0:
         # return to parent execution
         os._exit(0)
+
+    # fork1 pid
+    parent_pids.append(os.getpid())
 
     # separate the son from the father
     os.chdir('/')
@@ -99,6 +108,9 @@ def fork(func, args=None, kwargs=None):
     except Exception:
         os._exit(1)
 
+    # fork2 pid
+    parent_pids.append(os.getpid())
+
     # Add delay to ensure process main and fork1 processes exits (that had same args as
     # opensvc daemon process) before we check daemon pid processes.
     # This prevents daemon start abort on <detect running daemon process (from parents main or fork1 during boot)>
@@ -107,8 +119,6 @@ def fork(func, args=None, kwargs=None):
     # i+1    fork1 => fork() <defunct> level 2: 7970
     # i+2      fork2 => read <i> from pidfile, check if <i> is alive => abort level 3: 7971
     #
-    # log example without delay: when fork2 check if pid exist and match daemon, main pid still exist
-    # => initial start ... failed ... second restart
     # reproducer ()
     # {
     #     echo om daemon stop ...;
@@ -124,27 +134,9 @@ def fork(func, args=None, kwargs=None):
     # }
     #
     # reproducer 21
-    # om daemon stop ...
-    # set /var/lib/opensvc/osvcd.pid: 7966 (from last_pid 7945 + 21)
-    # Job for opensvc-agent.service failed because the service did not take the steps required by its unit configuration.
-    # See "systemctl status opensvc-agent.service" and "journalctl -xe" for details.
-    # cat: /var/lib/opensvc/osvcd.pid: No such file or directory
-    # got /var/lib/opensvc/osvcd.pid:
-    #
-    # Apr 02 23:06:20.747801 node1 systemd[1]: Starting OpenSVC agent...
-    # Apr 02 23:06:21.578814 node1 python3[7971]: n:node1 c:main detect running daemon process from /var/lib/opensvc/osvcd.pid: 7966 (our pid/ppid is 7971/1)
-    # Apr 02 23:06:21.579029 node1 python3[7971]: n:node1 c:main abort start: a daemon process is already running
-    # Apr 02 23:06:21.691992 node1 systemd[1]: opensvc-agent.service: New main PID 7966 does not exist or is a zombie.
-    # Apr 02 23:06:21.692214 node1 systemd[1]: opensvc-agent.service: Failed with result 'protocol'.
-    # Apr 02 23:06:21.696758 node1 systemd[1]: Failed to start OpenSVC agent.
-    # Apr 02 23:06:21.947391 node1 systemd[1]: opensvc-agent.service: Service RestartSec=100ms expired, scheduling restart.
-    # Apr 02 23:06:21.947915 node1 systemd[1]: opensvc-agent.service: Scheduled restart job, restart counter is at 1.
-    # Apr 02 23:06:21.948061 node1 systemd[1]: Stopped OpenSVC agent.
-    # Apr 02 23:06:21.949261 node1 systemd[1]: Starting OpenSVC agent...
-    #
-    # it needs systemd ExecStartPost=sleep 0.5 to prevent following systemd warning:
-    #     systemd[1]: opensvc-agent.service: Can't open PID file /var/lib/opensvc/osvcd.pid (yet?) after start: No such file or directory
-    time.sleep(0.2)
+    # detect running daemon process from /var/lib/opensvc/osvcd.pid: 7966 match parent pids [7966, 7970, 7971] (our pid/ppid is 7971/1)
+    # reproducer 26
+    # detect running daemon process from /var/lib/opensvc/osvcd.pid: 7971 match parent pids [7966, 7970, 7971] (our pid/ppid is 7971/1)
 
     # Redirect standard file descriptors.
     if hasattr(os, "devnull"):
@@ -283,7 +275,10 @@ class Daemon(object):
             except:
                 self.log.error("another daemon process detected, but file error on %s" % Env.paths.daemon_pid)
                 return True
-            if last_pid_trace == str(self.pid):
+            if int(last_pid_trace) in parent_pids:
+                self.log.debug("detect running daemon process from %s: %s match parent pids %s (our pid/ppid is %d/%d)" % (Env.paths.daemon_pid,  last_pid_trace, parent_pids, os.getpid(), os.getppid()))
+                return False
+            elif last_pid_trace == str(self.pid):
                 return False
             else:
                 self.log.error("detect running daemon process from %s: %s (our pid/ppid is %d/%d)" % (Env.paths.daemon_pid, last_pid_trace, os.getpid(), os.getppid()))
