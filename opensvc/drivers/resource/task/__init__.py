@@ -357,7 +357,7 @@ class BaseTask(Resource):
             return core.status.UP
         elif self.checker == "last_run_warn":
             ret = self.read_last_run_retcode()
-            if ret is not None:
+            if ret is not None and ret != 0:
                 self.status_log("last run exitcode: %d" % ret, "warn")
         return core.status.NA
 
