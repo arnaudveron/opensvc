@@ -27,3 +27,19 @@ class Vol(Svc):
                     users.append(child)
         return users
 
+    def devices(self):
+        devs = set()
+        if not self.devices_from:
+            dev = self.device()
+            if dev is None:
+                return set()
+            return set([dev])
+        for rid in self.devices_from:
+            r = self.get_resource(rid)
+            if r:
+                try:
+                    devs |= r.exposed_devs()
+                except AttributeError:
+                    continue
+        return devs
+
