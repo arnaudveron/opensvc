@@ -33,6 +33,9 @@ from utilities.lazy import lazy, unset_lazy
 # node monitor status where start_threads is allowed
 START_THREADS_ALLOWED_NMON_STATUS = (None, "idle", "init", "rejoin", "draining")
 
+# track daemon pids for osvcd pid check
+parent_pids = []
+
 try:
     from utilities.os.linux import set_tname
 except (ImportError, OSError):
@@ -84,9 +87,15 @@ def fork(func, args=None, kwargs=None):
     if kwargs is None:
         kwargs = {}
 
+    # main pid
+    parent_pids.append(os.getpid())
+
     if os.fork() > 0:
         # return to parent execution
         os._exit(0)
+
+    # fork1 pid
+    parent_pids.append(os.getpid())
 
     # separate the son from the father
     os.chdir('/')
@@ -99,13 +108,35 @@ def fork(func, args=None, kwargs=None):
     except Exception:
         os._exit(1)
 
-    # Add delay to ensure parents process exit.
+    # fork2 pid
+    parent_pids.append(os.getpid())
+
+    # Add delay to ensure process main and fork1 processes exits (that had same args as
+    # opensvc daemon process) before we check daemon pid processes.
     # This prevents daemon start abort on <detect running daemon process (from parents main or fork1 during boot)>
     # PID  DESC
-    # i    main => fork() <defunct>
-    # i+1    fork1 => fork() <defunct>
-    # i+2      fork2 => read <i> from pidfile, check if <i> is alive => abort
-    time.sleep(0.2)
+    # i    main => fork() <defunct> level 1: 7966
+    # i+1    fork1 => fork() <defunct> level 2: 7970
+    # i+2      fork2 => read <i> from pidfile, check if <i> is alive => abort level 3: 7971
+    #
+    # reproducer ()
+    # {
+    #     echo om daemon stop ...;
+    #     om daemon stop;
+    #     typeset -i add=$1;
+    #     typeset -i last_pid=$(set -- $(ps -o pid=); shift $(($#-1)); echo $1);
+    #     typeset -i pid=add+last_pid;
+    #     echo "set /var/lib/opensvc/osvcd.pid: $pid (from last_pid $last_pid + $add)";
+    #     printf $pid > /var/lib/opensvc/osvcd.pid;
+    #     om daemon start;
+    #     sleep 1;
+    #     echo "got /var/lib/opensvc/osvcd.pid: $(cat /var/lib/opensvc/osvcd.pid)"
+    # }
+    #
+    # reproducer 21
+    # detect running daemon process from /var/lib/opensvc/osvcd.pid: 7966 match parent pids [7966, 7970, 7971] (our pid/ppid is 7971/1)
+    # reproducer 26
+    # detect running daemon process from /var/lib/opensvc/osvcd.pid: 7971 match parent pids [7966, 7970, 7971] (our pid/ppid is 7971/1)
 
     # Redirect standard file descriptors.
     if hasattr(os, "devnull"):
@@ -244,7 +275,10 @@ class Daemon(object):
             except:
                 self.log.error("another daemon process detected, but file error on %s" % Env.paths.daemon_pid)
                 return True
-            if last_pid_trace == str(self.pid):
+            if int(last_pid_trace) in parent_pids:
+                self.log.debug("detect running daemon process from %s: %s match parent pids %s (our pid/ppid is %d/%d)" % (Env.paths.daemon_pid,  last_pid_trace, parent_pids, os.getpid(), os.getppid()))
+                return False
+            elif last_pid_trace == str(self.pid):
                 return False
             else:
                 self.log.error("detect running daemon process from %s: %s (our pid/ppid is %d/%d)" % (Env.paths.daemon_pid, last_pid_trace, os.getpid(), os.getppid()))
