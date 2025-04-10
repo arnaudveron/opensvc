@@ -27,6 +27,10 @@ class Vol(Svc):
                     users.append(child)
         return users
 
+    @lazy
+    def devices_from(self):
+        return self.oget("DEFAULT", "devices_from")
+
     def devices(self):
         devs = set()
         if not self.devices_from:
