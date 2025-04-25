@@ -339,6 +339,16 @@ KEYWORDS = [
     },
     {
         "section": "DEFAULT",
+        "keyword": "devices_from",
+        "inheritance": "head",
+        "depends": [("kind", "vol")],
+        "at": False,
+        "required": False,
+        "convert": "list",
+        "text": "The list of resources that contribute their exposed devices to the volume exposed devices. If not specified, only the last disk contributes.",
+    },
+    {
+        "section": "DEFAULT",
         "keyword": "access",
         "inheritance": "head",
         "depends": [("kind", "vol")],
