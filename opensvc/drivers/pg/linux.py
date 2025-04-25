@@ -197,8 +197,10 @@ def set_cpu_quota_v2(o):
 
     if threads == "all":
         threads = total_threads
+    else:
+        threads = int(threads)
 
-    share = (quota * period * threads / total_threads) // 100
+    share = (quota * period * threads) // 100
     tgt_val = "%d %d" % (share, period)
 
     cur_val = get_cgroup(o, 'cpu', 'cpu.max')
