@@ -60,6 +60,13 @@ KEYWORDS = BASE_KEYWORDS + [
         "default": 0,
         "text": "The md number of spare devices to use with mdadm create command"
     },
+    {
+        "keyword": "bitmap",
+        "at": True,
+        "provisioning": True,
+        "example": "internal",
+        "text": "'none' disables the write-intent bitmap, 'internal' writes the bitmap on the md legs, a file path may write the bitmap to a file (deprecated upstream)."
+    },
 ]
 
 KEYS.register_driver(
@@ -98,6 +105,7 @@ class DiskMd(BaseDisk):
                  spares=None,
                  chunk=None,
                  layout=None,
+                 bitmap=None,
                  **kwargs):
         self.uuid = uuid
         self.level = level
@@ -105,6 +113,7 @@ class DiskMd(BaseDisk):
         self.spares = spares
         self.chunk = chunk
         self.layout = layout
+        self.bitmap = bitmap
         self.mdadm = "/sbin/mdadm"
         super(DiskMd, self).__init__(name=uuid, type='disk.md', **kwargs)
         if uuid:
@@ -555,6 +564,8 @@ class DiskMd(BaseDisk):
             argv += ["-c", str(convert_size(chunk, _to="k", _round=4))]
         if layout:
             argv += ["-p", layout]
+        if self.bitmap in ("none", "internal"):
+            argv += ["--bitmap="+self.bitmap]
         argv += devs
         return argv
 
