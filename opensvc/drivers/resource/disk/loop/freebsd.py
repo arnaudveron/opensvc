@@ -2,7 +2,6 @@ import os
 
 import core.exceptions as ex
 import core.status
-from core.objects.svcdict import KEYS
 from utilities.proc import call, which
 from . import BaseDiskLoop
 
@@ -74,6 +73,10 @@ class DiskLoop(BaseDiskLoop):
                 raise ex.Error
 
     def _status(self, verbose=False):
+        r = self.svc.resource_handling_file(self.loopfile)
+        if self.is_provisioned() and not os.path.exists(self.loopfile):
+            if r is None or (r and r.status() in (core.status.UP, core.status.STDBY_UP)):
+                self.status_log("%s does not exist" % self.loopfile)
         if self.is_up():
             return core.status.UP
         else:

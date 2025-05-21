@@ -1,7 +1,8 @@
 import os
 
-from .. import BaseDisk, BASE_KEYWORDS
-from env import Env
+import core.exceptions as ex
+from utilities.converters import convert_size
+from .. import BASE_KEYWORDS
 from core.resource import Resource
 from core.objects.svcdict import KEYS
 
@@ -65,3 +66,37 @@ class BaseDiskLoop(Resource):
         self.log.info("chmod 600 %s", self.loopfile)
         os.chmod(self.loopfile, 0o0600)
 
+    def provisioned(self):
+        try:
+            return os.path.exists(self.loopfile)
+        except Exception:
+            return False
+
+    def unprovisioner(self):
+        try:
+            self.loopfile
+        except Exception as e:
+            raise ex.Error(str(e))
+
+        if not self.provisioned():
+            return
+
+        self.log.info("unlink %s" % self.loopfile)
+        os.unlink(self.loopfile)
+        self.svc.node.unset_lazy("devtree")
+
+    def provisioner(self):
+        d = os.path.dirname(self.loopfile)
+        try:
+            if not os.path.exists(d):
+                self.log.info("create directory %s"%d)
+                os.makedirs(d)
+            with open(self.loopfile, 'w') as f:
+                self.log.info("create file %s, size %s"%(self.loopfile, self.size))
+                f.seek(convert_size(self.size, _to='b', _round=512)-1)
+                f.write('\0')
+            self.chown()
+            self.chmod()
+        except Exception as e:
+            raise ex.Error("failed to create %s: %s"% (self.loopfile, str(e)))
+        self.svc.node.unset_lazy("devtree")
