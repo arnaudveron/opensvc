@@ -1,4 +1,5 @@
 import os
+from os.path import isdir
 
 import core.exceptions as ex
 from utilities.converters import convert_size
@@ -81,8 +82,14 @@ class BaseDiskLoop(Resource):
         if not self.provisioned():
             return
 
+        if isdir(self.loopfile):
+            raise ex.Error("unprovision loop file is not allowed on directory: %s" % self.loopfile)
+
         self.log.info("unlink %s" % self.loopfile)
-        os.unlink(self.loopfile)
+        try:
+            os.unlink(self.loopfile)
+        except Exception as e:
+            raise ex.Error("unlink %s: %s"% (self.loopfile, str(e)))
         self.svc.node.unset_lazy("devtree")
 
     def provisioner(self):
