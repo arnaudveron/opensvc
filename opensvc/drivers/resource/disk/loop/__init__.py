@@ -21,7 +21,7 @@ KEYWORDS = BASE_KEYWORDS + [
         "protoname": "loopfile",
         "at": True,
         "required": True,
-        "text": "The loopback device backing file full path."
+        "text": "The loopback device backing file full absolute path."
     },
 ]
 DEPRECATED_SECTIONS = {
@@ -86,6 +86,7 @@ class BaseDiskLoop(Resource):
         self.svc.node.unset_lazy("devtree")
 
     def provisioner(self):
+        self._check_loopfile_path()
         d = os.path.dirname(self.loopfile)
         try:
             if not os.path.exists(d):
@@ -100,3 +101,10 @@ class BaseDiskLoop(Resource):
         except Exception as e:
             raise ex.Error("failed to create %s: %s"% (self.loopfile, str(e)))
         self.svc.node.unset_lazy("devtree")
+
+    def _check_loopfile_path(self):
+        path = self.loopfile
+        if not isinstance(path, str):
+            raise ex.Error("Resource loop file path must be absolute: found %s" % path)
+        if not path.startswith(os.sep):
+            raise ex.Error("Resource loop file path must be absolute: found %s" % path)
