@@ -1,7 +1,9 @@
 import os
+from os.path import isdir
 
-from .. import BaseDisk, BASE_KEYWORDS
-from env import Env
+import core.exceptions as ex
+from utilities.converters import convert_size
+from .. import BASE_KEYWORDS
 from core.resource import Resource
 from core.objects.svcdict import KEYS
 
@@ -20,7 +22,7 @@ KEYWORDS = BASE_KEYWORDS + [
         "protoname": "loopfile",
         "at": True,
         "required": True,
-        "text": "The loopback device backing file full path."
+        "text": "The loopback device backing file full absolute path."
     },
 ]
 DEPRECATED_SECTIONS = {
@@ -65,3 +67,51 @@ class BaseDiskLoop(Resource):
         self.log.info("chmod 600 %s", self.loopfile)
         os.chmod(self.loopfile, 0o0600)
 
+    def provisioned(self):
+        try:
+            return os.path.exists(self.loopfile)
+        except Exception:
+            return False
+
+    def unprovisioner(self):
+        try:
+            self.loopfile
+        except Exception as e:
+            raise ex.Error(str(e))
+
+        if not self.provisioned():
+            return
+
+        if isdir(self.loopfile):
+            raise ex.Error("unprovision loop file is not allowed on directory: %s" % self.loopfile)
+
+        self.log.info("unlink %s" % self.loopfile)
+        try:
+            os.unlink(self.loopfile)
+        except Exception as e:
+            raise ex.Error("unlink %s: %s"% (self.loopfile, str(e)))
+        self.svc.node.unset_lazy("devtree")
+
+    def provisioner(self):
+        self._check_loopfile_path()
+        d = os.path.dirname(self.loopfile)
+        try:
+            if not os.path.exists(d):
+                self.log.info("create directory %s"%d)
+                os.makedirs(d)
+            with open(self.loopfile, 'w') as f:
+                self.log.info("create file %s, size %s"%(self.loopfile, self.size))
+                f.seek(convert_size(self.size, _to='b', _round=512)-1)
+                f.write('\0')
+            self.chown()
+            self.chmod()
+        except Exception as e:
+            raise ex.Error("failed to create %s: %s"% (self.loopfile, str(e)))
+        self.svc.node.unset_lazy("devtree")
+
+    def _check_loopfile_path(self):
+        path = self.loopfile
+        if not isinstance(path, str):
+            raise ex.Error("Resource loop file path must be absolute: found %s" % path)
+        if not path.startswith(os.sep):
+            raise ex.Error("Resource loop file path must be absolute: found %s" % path)

@@ -55,3 +55,20 @@ class TestSvcFsFlag:
         mock_sysname('Linux')
         flag_resource = svc.get_resource('fs#flag1')
         assert flag_resource.type == 'fs.flag'
+
+
+@pytest.mark.ci
+class TestResourceHandlingDir:
+    @staticmethod
+    def test_resource_handling_dir(svc, mocker):
+        class MockerRes:
+            def __init__(self, v):
+                self.mount_point = v
+
+        mocker.patch.object(Svc, 'get_resources', return_value=[MockerRes("/a/b"), MockerRes("/a/b/c")])
+        assert svc.resource_handling_dir("") is None
+        assert svc.resource_handling_dir("/") is None
+        assert svc.resource_handling_dir("/a") is None
+        assert svc.resource_handling_dir("/a/b").mount_point is "/a/b"
+        assert svc.resource_handling_dir("/a/b/c").mount_point is "/a/b/c"
+        assert svc.resource_handling_dir("/a/b/c/d").mount_point is "/a/b/c"

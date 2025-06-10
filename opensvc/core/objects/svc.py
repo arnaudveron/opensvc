@@ -3285,8 +3285,9 @@ class Svc(PgMixin, BaseSvc):
             if path in mntpts.keys():
                 return mntpts[path]
             path = os.path.dirname(path)
-            if path == os.sep:
-                return
+            if path in [os.sep, ""]:
+                # end loop: reach "/" or was not an absolute path and reached ""
+                return None
 
     def print_schedule(self):
         """
