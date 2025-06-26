@@ -464,9 +464,9 @@ def action_triggers(self, trigger="", action=None, shell=False, **kwargs):
 
     if blocking and ret != 0:
         if action == "command":
-            raise ex.Error("command return code [%d]" % ret)
+            raise ex.ExecError("command return code", ret)
         else:
-            raise ex.Error("%s: %s blocking error [%d]" % (attr, cmd, ret))
+            raise ex.ExecError("%s: %s blocking error" % (attr, cmd), ret)
 
     if not blocking and ret != 0:
         if action == "command":

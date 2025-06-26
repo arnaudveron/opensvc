@@ -181,6 +181,13 @@ class BaseTask(Resource):
         xc = self.read_last_run_retcode()
         if xc is not None:
             data["last_run_exitcode"] = xc
+
+        try:
+            from utilities.rfc3339 import RFC3339
+            mtime = os.path.getmtime(self.last_run_retcode_f)
+            data["last_run_at"] = RFC3339().from_epoch(mtime)
+        except Exception:
+            pass
         return data
 
     def _info(self):
