@@ -78,9 +78,9 @@ class TaskDocker(ContainerDocker, BaseTask):
     def _run_call(self):
         try:
             ContainerDocker.start(self)
-            self.write_last_run_retcode(0)
+            self.write_last_run(0)
         except ex.Error:
-            self.write_last_run_retcode(1)
+            self.write_last_run(1)
             raise
         finally:
             if self.rm:

@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import json
 import os
 import time
 import sys
@@ -15,6 +16,7 @@ from core.resource import Resource
 from foreign.six.moves import input
 from utilities.proc import lcall
 from utilities.files import makedirs
+from utilities.rfc3339 import RFC3339
 
 KEYWORDS = [
     {
@@ -177,18 +179,8 @@ class BaseTask(Resource):
         )
 
     def _status_info(self):
-        data = {}
-        xc = self.read_last_run_retcode()
-        if xc is not None:
-            data["last_run_exitcode"] = xc
+        return self.read_last_run()
 
-        try:
-            from utilities.rfc3339 import RFC3339
-            mtime = os.path.getmtime(self.last_run_retcode_f)
-            data["last_run_at"] = RFC3339().from_epoch(mtime)
-        except Exception:
-            pass
-        return data
 
     def _info(self):
         data = [
@@ -233,11 +225,21 @@ class BaseTask(Resource):
 
     @lazy
     def last_run_retcode_f(self):
+        # backward compat
         return os.path.join(self.var_d, "last_run_retcode")
 
-    def write_last_run_retcode(self, value):
-        with open(self.last_run_retcode_f, "w") as f:
-            f.write(str(value))
+    @lazy
+    def last_run_f(self):
+        return os.path.join(self.var_d, "last_run")
+
+    def write_last_run(self, exitcode):
+        data = {
+            "exitcode": exitcode,
+            "at": RFC3339().from_epoch(time.time()),
+            "session_id": Env.session_uuid,
+        }
+        with open(self.last_run_f, "w") as f:
+            return json.dump(data, f)
 
     def read_last_run_retcode(self):
         try:
@@ -245,6 +247,25 @@ class BaseTask(Resource):
                 return int(f.read())
         except Exception:
             return
+
+    def read_last_run(self):
+        data = {
+            "exitcode": 0,
+            "at": "1970-01-01T01:00:00.000000+00:00",
+            "session_id": "",
+        }
+        try:
+            with open(self.last_run_f, "r") as f:
+                data = json.load(f)
+        except Exception:
+            xc = self.read_last_run_retcode()
+            if xc:
+                data["exitcode"] = xc
+                try:
+                    data["at"] = RFC3339().from_epoch(os.path.getmtime(self.last_run_retcode_f))
+                except Exception:
+                    pass
+        return data
 
     def remove_last_run_retcode(self):
         try:

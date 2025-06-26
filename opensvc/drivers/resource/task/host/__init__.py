@@ -168,12 +168,12 @@ class TaskHost(BaseTask):
 
         try:
             self.action_triggers("", "command", **kwargs)
-            self.write_last_run_retcode(0)
+            self.write_last_run(0)
         except ex.Error as exc:
             ret = 1
             if isinstance(exc, ex.ExecError):
                 ret = exc.exitcode
-            self.write_last_run_retcode(ret)
+            self.write_last_run(ret)
             if self.on_error:
                 kwargs["blocking"] = False
                 self.action_triggers("", "on_error", **kwargs)
