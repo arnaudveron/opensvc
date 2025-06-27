@@ -679,7 +679,7 @@ class ContainerDocker(BaseContainer):
                 ret = 1
 
         if ret != 0:
-            raise ex.Error
+            raise ex.ExecError("container command exec error", ret)
 
         if action == "start":
             self.is_up_clear_cache()

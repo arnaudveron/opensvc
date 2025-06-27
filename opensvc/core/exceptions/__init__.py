@@ -19,6 +19,15 @@ class Error(OsvcException):
     def __str__(self):
         return str(self.value)
 
+class ExecError(Error):
+    """ Failed command exec
+    """
+    def __init__(self, value="", exitcode=0):
+        self.value = value
+        self.exitcode = exitcode
+    def __str__(self):
+        return "%s [%d]" % (self.value, self.exitcode)
+
 class Version(OsvcException):
     """ propagate the version string
     """

@@ -23,6 +23,12 @@ KEYWORDS = BASE_KEYWORDS + [
         "text": "The md uuid to use with mdadm assemble commands"
     },
     {
+        "keyword": "name",
+        "at": True,
+        "text": "The name of the md device. This name must have 32 characters max. Beware not to set a name already in use by another md resource.",
+        "default_text": "<namespace>.<name>.disk.<rindex>",
+    },
+    {
         "keyword": "devs",
         "at": True,
         "default": [],
@@ -115,7 +121,7 @@ class DiskMd(BaseDisk):
         self.layout = layout
         self.bitmap = bitmap
         self.mdadm = "/sbin/mdadm"
-        super(DiskMd, self).__init__(name=uuid, type='disk.md', **kwargs)
+        super(DiskMd, self).__init__(name=name, type='disk.md', **kwargs)
         if uuid:
             self.label = "md " + uuid
         else:
@@ -242,7 +248,9 @@ class DiskMd(BaseDisk):
         raise ex.Error("unable to find a devpath for md")
 
     def devname(self):
-        if self.svc.namespace:
+        if self.name:
+            return "/dev/md/"+self.name
+        elif self.svc.namespace:
             return "/dev/md/"+self.svc.namespace.lower()+"."+self.svc.name.split(".")[0]+"."+self.rid.replace("#", ".")
         else:
             return "/dev/md/"+self.svc.name.split(".")[0]+"."+self.rid.replace("#", ".")

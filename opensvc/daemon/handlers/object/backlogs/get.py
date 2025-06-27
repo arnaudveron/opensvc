@@ -26,6 +26,13 @@ class Handler(daemon.handler.BaseHandler):
             "default": "10k",
             "desc": "The per-instance backlog size.",
         },
+        {
+            "name": "sid",
+            "required": False,
+            "format": "string",
+            "default": None,
+            "desc": "The session id to filter from the log file tail.",
+        },
     ]
     access = {
         "roles": ["guest"],
@@ -39,5 +46,5 @@ class Handler(daemon.handler.BaseHandler):
             raise ex.HTTP(404, "%s not found" % options.path)
         logfile = os.path.join(svc.log_d, svc.name+".log")
         ofile = thr._action_logs_open(logfile, options.backlog, svc.path)
-        return thr.read_file_lines(ofile)
+        return thr.read_file_lines(ofile, options.sid)
 

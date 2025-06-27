@@ -2038,7 +2038,7 @@ class ClientHandler(shared.OsvcThread):
             line = ofile.readline()
         return ofile
 
-    def read_file_lines(self, ofile):
+    def read_file_lines(self, ofile, sid=None):
         data = []
         buff = ""
         def parse(_buff):
@@ -2065,7 +2065,12 @@ class ClientHandler(shared.OsvcThread):
                 if buff:
                     # new msg, push pending buff
                     try:
-                        data.append(parse(buff))
+                        parse_data = parse(buff)
+                        if sid:
+                            if parse_data["x"]["sid"] == sid:
+                                data.append(parse_data)
+                        else:
+                            data.append(parse_data)
                     except ValueError:
                         pass
                 buff = line
@@ -2074,7 +2079,10 @@ class ClientHandler(shared.OsvcThread):
         if buff:
             # EOF, push pending buff
             try:
-                data.append(parse(buff))
+                parse_data = parse(buff)
+                if sid and parse_data["x"]["sid"] != sid:
+                    return data
+                data.append(parse_data)
             except ValueError:
                 pass
         return data

@@ -266,6 +266,11 @@ OPT = Storage({
         action="store_true", dest="show_disabled",
         help="Include the disabled resources. This option supersedes "
              "the :kw:`show_disabled` value in the service configuration."),
+    "sid": Option(
+        "--sid", default=None,
+        action="store", dest="sid",
+        help="Session id to filter "
+             "from the log file tail. Default is None."),
     "slave": Option(
         "--slave", default=None, action="store", dest="slave",
         help="Limit the action to the service resources in the specified, comma-"
@@ -400,6 +405,7 @@ ACTIONS = {
                 OPT.backlog,
                 OPT.follow,
                 OPT.nopager,
+                OPT.sid,
             ]
         },
         "ls": {
