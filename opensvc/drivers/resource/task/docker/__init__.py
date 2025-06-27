@@ -79,8 +79,11 @@ class TaskDocker(ContainerDocker, BaseTask):
         try:
             ContainerDocker.start(self)
             self.write_last_run(0)
-        except ex.Error:
-            self.write_last_run(1)
+        except ex.Error as exc:
+            ret = 1
+            if isinstance(exc, ex.ExecError):
+                ret = exc.exitcode
+            self.write_last_run(ret)
             raise
         finally:
             if self.rm:
