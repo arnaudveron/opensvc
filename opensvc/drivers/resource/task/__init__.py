@@ -179,8 +179,10 @@ class BaseTask(Resource):
         )
 
     def _status_info(self):
-        return self.read_last_run()
-
+        data = {}
+        for k, v in self.read_last_run().items():
+            data["last_run_"+k] = v
+        return data
 
     def _info(self):
         data = [
@@ -199,10 +201,10 @@ class BaseTask(Resource):
         return False
 
     def stop(self):
-        self.remove_last_run_retcode()
+        self.remove_last_run()
 
     def boot(self):
-        self.remove_last_run_retcode()
+        self.remove_last_run()
 
     @lazy
     def running_d(self):
@@ -267,7 +269,11 @@ class BaseTask(Resource):
                     pass
         return data
 
-    def remove_last_run_retcode(self):
+    def remove_last_run(self):
+        try:
+            os.unlink(self.last_run_f)
+        except Exception:
+            pass
         try:
             os.unlink(self.last_run_retcode_f)
         except Exception:
@@ -376,7 +382,7 @@ class BaseTask(Resource):
                 self.check_requires("run")
             except (ex.Error, ex.ContinueAction):
                 return core.status.NA
-            ret = self.read_last_run_retcode()
+            ret = self.read_last_run().get("exitcode")
             if ret is None:
                 return core.status.NA
             if ret:
@@ -384,7 +390,7 @@ class BaseTask(Resource):
                 return core.status.DOWN
             return core.status.UP
         elif self.checker == "last_run_warn":
-            ret = self.read_last_run_retcode()
+            ret = self.read_last_run().get("exitcode")
             if ret is not None and ret != 0:
                 self.status_log("last run exitcode: %d" % ret, "warn")
         return core.status.NA
