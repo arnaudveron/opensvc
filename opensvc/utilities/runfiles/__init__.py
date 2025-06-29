@@ -2,10 +2,19 @@ import os
 
 def has_running(run_dir, log=None, cleanup=False):
     try:
-        if any(is_valid(os.path.join(run_dir, f), log=log, cleanup=cleanup) for f in os.listdir(run_dir)):
-            return True
+        return [info for info in (is_valid(os.path.join(run_dir, f), log=log, cleanup=cleanup) for f in os.listdir(run_dir)) if info]
     except FileNotFoundError:
-        return False
+        return []
+
+def get_sid(run_file):
+    try:
+        with open(run_file, 'r') as f:
+            sid = f.read().strip()
+            if sid:
+                return sid
+            return "unknown"
+    except FileNotFoundError:
+        return "unknown"
 
 def is_valid(run_file, log=None, cleanup=False):
     pid = os.path.basename(run_file)
@@ -24,7 +33,7 @@ def is_valid(run_file, log=None, cleanup=False):
                 log.warn(e)
 
     if str(os.getpid()) == pid:
-        return True
+        return { "pid": int(pid), "session_id": get_sid(run_file) }
 
     try:
         run_file_mtime = os.path.getmtime(run_file)
@@ -38,7 +47,7 @@ def is_valid(run_file, log=None, cleanup=False):
         return False
 
     if proc_pid_mtime <= run_file_mtime:
-        return True
+        return { "pid": int(pid), "session_id": get_sid(run_file) }
 
     do_cleanup("proc %s is not the one that created %s" % (pid, run_file))
     return False

@@ -3788,9 +3788,11 @@ class Svc(PgMixin, BaseSvc):
         import utilities.runfiles
         for rid in rids:
             d = os.path.join(self.var_d, rid, "run")
-            if utilities.runfiles.has_running(d):
-                running.append(rid)
-        return [rid for rid in running if rid]
+            task_infos = utilities.runfiles.has_running(d)
+            for info in task_infos:
+                info["rid"] = rid
+                running.append(info)
+        return [info for info in running if info]
 
     def _get_running(self, lockfile):
         try:
