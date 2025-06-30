@@ -1,4 +1,5 @@
 import os
+from env import Env
 
 def has_running(run_dir, log=None, cleanup=False):
     try:
@@ -33,7 +34,7 @@ def is_valid(run_file, log=None, cleanup=False):
                 log.warn(e)
 
     if str(os.getpid()) == pid:
-        return { "pid": int(pid), "session_id": get_sid(run_file) }
+        return { "pid": int(pid), "session_id": Env.session_uuid }
 
     try:
         run_file_mtime = os.path.getmtime(run_file)
