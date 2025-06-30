@@ -1671,8 +1671,9 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             try:
                 # Do our best to have most recent log sync on file system, node is going to crash of fast reboot
                 if hasattr(os, "fsync"):
-                    with open(os.path.join(Env.paths.pathlog, "node.log"), "a") as fd:
-                        os.fsync(fd)
+                    with open(os.path.join(Env.paths.pathlog, "node.log"), "a") as f:
+                        f.flush()
+                        os.fsync(f.fileno())
             except:
                 pass
             _suicide(delay)
