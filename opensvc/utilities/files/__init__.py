@@ -133,7 +133,10 @@ def assert_file_is_root_only_writeable(filename):
 def unlink_and_sync(filename):
     os.unlink(filename)
     dirname = os.path.dirname(filename)
-    fd = os.open(dirname, os.O_DIRECTORY)
+    try:
+        fd = os.open(dirname, os.O_DIRECTORY)
+    except AttributeError:
+        fd = os.open(dirname, os.O_RDONLY)
     try:
         os.fsync(fd)
     finally:

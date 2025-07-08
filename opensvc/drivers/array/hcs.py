@@ -474,7 +474,7 @@ def apiretry(func):
                 data = self.check_result(func.__name__, uri, result=data, **kwargs)
                 if time.time() + short_delay < barrier and check_condition(self, data, condition, msg):
                     time.sleep(short_delay)
-                    self.log.info("  retry async request: %s (%s)" % (data.get("state"), uri), {"f_stream": False})
+                    self.log.info("  retry async request: %s (%s)" % (data, uri), {"f_stream": False})
                     continue
                 if data.get("state") == "Failed":
                     self.dump(func.__name__, uri, _result=data, **kwargs)

@@ -483,8 +483,12 @@ class App(Resource):
             return
 
         try:
-            self.run("stop", cmd)
+            ret = self.run("stop", cmd)
+            if ret != 0:
+                raise ex.Error("exit code %d" % ret)
         except Exception as exc:
+            if self.svc.command_is_scoped():
+                raise
             self.log.warning(exc)
 
     def unlock(self):
