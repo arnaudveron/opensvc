@@ -190,6 +190,8 @@ class IpNetns(IpHost):
         if ":" in self.addr:
             cmd = [Env.syspaths.nsenter, "--net="+self.netns, "sysctl" , "-w", "net.ipv6.conf."+self.final_guest_dev+".disable_ipv6=0"]
             self.vcall(cmd)
+            cmd = [Env.syspaths.nsenter, "--net="+self.netns, "sysctl" , "-w", "net.ipv6.conf."+self.final_guest_dev+".ndisc_notify=1"]
+            self.vcall(cmd)
 
     @lazy
     def guest_dev(self):
@@ -373,11 +375,6 @@ class IpNetns(IpHost):
         if ":" not in self.addr:
             # announce
             cmd = [Env.syspaths.nsenter, "--net="+self.netns] + Env.python_cmd + [os.path.join(Env.paths.pathlib, "utilities", "arp.py"), self.final_guest_dev, self.addr]
-            self.log.info(" ".join(cmd))
-            out, err, ret = justcall(cmd)
-        elif self.gateway:
-            # make this ip6 pingable asap by forcing a immediate Neighbour Announcement
-            cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ping6", "-c", "1", "-w", "1", "-W", "1", self.gateway]
             self.log.info(" ".join(cmd))
             out, err, ret = justcall(cmd)
 
@@ -632,12 +629,6 @@ class IpNetns(IpHost):
             cmd = [Env.syspaths.nsenter, "--net="+self.netns] + Env.python_cmd + [os.path.join(Env.paths.pathlib, "utilities", "arp.py"), self.final_guest_dev, self.addr]
             self.log.info(" ".join(cmd))
             out, err, ret = justcall(cmd)
-        elif self.gateway:
-            # make this ip6 pingable asap by forcing a immediate Neighbour Announcement
-            cmd = [Env.syspaths.nsenter, "--net="+self.netns, "ping6", "-c", "1", "-w", "1", "-W", "1", self.gateway]
-            self.log.info(" ".join(cmd))
-            out, err, ret = justcall(cmd)
-
 
     def get_nspid(self):
         if self.container.type in ("container.docker", "container.podman"):
