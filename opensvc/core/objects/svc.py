@@ -4081,8 +4081,9 @@ class Svc(PgMixin, BaseSvc):
         try:
             # Do our best to have most recent log sync on file system, node is going to crash of fast reboot
             if hasattr(os, "fsync"):
-                with open(os.path.join(self.log_d, self.name+".log"), "a") as fd:
-                    os.fsync(fd)
+                with open(os.path.join(self.log_d, self.name+".log"), "a") as f:
+                    f.flush()
+                    os.fsync(f.fileno())
         except:
             pass
         getattr(self, self.monitor_action)()

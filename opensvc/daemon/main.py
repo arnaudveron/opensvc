@@ -244,7 +244,8 @@ class Daemon(object):
             filep.write("")
             # Do our best to have file sync on file system
             if hasattr(os, "fsync"):
-                os.fsync(filep)
+                filep.flush()
+                os.fsync(filep.fileno())
 
     def _run(self):
         """
