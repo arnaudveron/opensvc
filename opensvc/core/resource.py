@@ -152,6 +152,50 @@ class Resource(object):
             os.makedirs(var_d)
         return var_d
 
+    @lazy
+    def stopped_flag(self):
+        """ 
+        transcient stopped state file path
+        """
+        return os.path.join(self.var_d, "stopped")
+
+    def stopped(self):
+        """
+        Return True if the resource has been stopped.
+        """
+        return os.path.exists(self.stopped_flag)
+
+    def stopped_info(self):
+        """
+        status info for the stopped state
+        """
+        if self.stopped():
+            self.log.debug("resource %s is stopped", self.rid)
+            self.status_log("user stopped", "info")
+
+    def set_stopped(self, stopped=True):
+        """
+        Set the stopped state file of the resource.
+        """
+        try:
+            if stopped:
+                return open(self.stopped_flag, "w").close()
+            if self.stopped():
+                return os.unlink(self.stopped_flag)
+        except:
+            pass
+
+    def set_stopped_flag(self, action=None):
+        """
+        Set or unset the stopped state file of the resource according to
+        the action.
+        """
+        if action == "stop":
+            if self.svc.command_is_scoped() and (self.nb_restart > 0 or self.is_standby):
+                self.set_stopped(True)
+                return
+        self.set_stopped(False)
+
     def set_logger(self, log):
         """
         Set the <log> logger as the resource logger, in place of the default
@@ -335,6 +379,7 @@ class Resource(object):
                 header = ""
             self.log.info("%s%s %s", header, action, self.label)
             return
+        self.set_stopped_flag(action)
         getattr(self, action)()
 
     def do_action(self, action):
@@ -550,6 +595,7 @@ class Resource(object):
         # now the rstatus can no longer be None
         if self.rstatus == core.status.UNDEF or refresh:
             self.status_logs = []
+            self.stopped_info()
             self.rstatus = self.try_status(verbose)
             self.rstatus = self.status_stdby(self.rstatus)
             self.last_status_info = self.status_info()
@@ -926,8 +972,9 @@ class Resource(object):
     def boot(self):
         """
         Clean up actions to do on node boot before the daemon starts.
+        Remove transcient files, reset the stopped state.
         """
-        pass
+        self.set_stopped(False)
 
     def shutdown(self):
         """
