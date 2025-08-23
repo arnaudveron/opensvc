@@ -591,7 +591,7 @@ class App(Resource):
         and stop actions.
         Or acquire-release the app resource lock and run status.
         """
-        self.lock(action)
+        self.lock(action, timeout=1, delay=0.2)
         if action == "status":
             self.unlock()
         try:
