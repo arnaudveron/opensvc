@@ -100,27 +100,39 @@ def cmlock(*args, **kwargs):
 
 def lock(timeout=30, delay=1, lockfile=None, intent=None):
     """
-    The lock acquire function.
+    Attempt to acquire a lock within a timeout period.
+
+    Args:
+        timeout (int): Maximum time (in seconds) to wait for the lock.
+                       Use 0 to attempt only once. Default is 30.
+        delay (int): Interval (in seconds) between retries.
+                     Use 0 to attempt only once. Default is 1.
+        lockfile (str): Path to the lock file.
+        intent (str): The purpose of acquiring the lock.
+
+    Raises:
+        LockTimeout: If the lock cannot be acquired within the timeout.
+
+    Returns:
+        Lock object from `lock_nowait` if successful.
     """
-    if timeout == 0 or delay == 0:
-        ticks = [0]
-    else:
-        ticks = range(int(float(timeout) / float(delay)))
-    if len(ticks) == 0:
-        ticks = [0]
-    err = {}
-    for tick in ticks:
+    last_error = {}
+    deadline = time.time() + timeout
+    retryable = True
+
+    while retryable:
         try:
             return lock_nowait(lockfile, intent)
         except LockAcquire as exc:
-            err["intent"] = exc.intent
-            err["pid"] = exc.pid
-            err["path"] = exc.path
+            last_error = {"intent": exc.intent, "pid": exc.pid, "path": exc.path}
         except Exception:
             raise
-        if tick > 0:
+
+        retryable = delay > 0 and (delay + time.time()) < deadline
+        if retryable:
             time.sleep(delay)
-    raise LockTimeout(**err)
+
+    raise LockTimeout(**last_error)
 
 
 def lock_nowait(lockfile=None, intent=None):
