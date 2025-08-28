@@ -195,7 +195,7 @@ class Resource(object):
         stopped state.
         """
         if action in ["stop", "_pg_kill"]:
-            if self.svc.command_is_scoped() and (self.nb_restart > 0 or self.is_standby):
+            if self.svc.command_is_scoped():
                 self.set_stopped(True)
                 return
         elif action.startswith("_pg"):
