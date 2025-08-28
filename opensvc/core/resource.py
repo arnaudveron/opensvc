@@ -189,11 +189,17 @@ class Resource(object):
         """
         Set or unset the stopped state file of the resource according to
         the action.
+        Treat `_pg_kill` as a valid stop action => creates the stopped flag becaiuse
+        stop action --force => set_stopped_flag("stop") + set_stopped_flag("_pg_kill")
+        All other `pg_*` actions remain ignored and do not affect the
+        stopped state.
         """
-        if action == "stop":
+        if action in ["stop", "_pg_kill"]:
             if self.svc.command_is_scoped() and (self.nb_restart > 0 or self.is_standby):
                 self.set_stopped(True)
                 return
+        elif action.startswith("_pg"):
+            return
         self.set_stopped(False)
 
     def set_logger(self, log):
