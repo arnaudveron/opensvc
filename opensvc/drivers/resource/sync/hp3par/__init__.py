@@ -319,7 +319,7 @@ class SyncHp3par(Sync):
             if vv['SyncStatus'] != 'Synced':
                 self.status_log("vv %s SyncStatus is not Synced (%s)"%(vv['LocalVV'], vv['SyncStatus']))
                 r = core.status.WARN
-            if vv['LastSyncTime'] < elapsed:
+            if vv.get('LastSyncTime') and vv['LastSyncTime'] < elapsed:
                 self.status_log("vv %s last sync too old (%s)"%(vv['LocalVV'], vv['LastSyncTime'].strftime("%Y-%m-%d %H:%M")))
                 r = core.status.WARN
 

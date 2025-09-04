@@ -355,7 +355,10 @@ class Hp3par(object):
             vv_data = {}
             for a, b in zip(cols_vv, v):
                 vv_data[a] = b
-            vv_data['LastSyncTime'] = self.s_to_datetime(vv_data['LastSyncTime'])
+            try:
+                vv_data['LastSyncTime'] = self.s_to_datetime(vv_data['LastSyncTime'])
+            except Exception:
+                vv_data['LastSyncTime'] = None
             vv_l.append(vv_data)
         data = {'rcg': rcg_data, 'vv': vv_l}
         return data
