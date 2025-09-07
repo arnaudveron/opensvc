@@ -2038,9 +2038,38 @@ class ClientHandler(shared.OsvcThread):
             line = ofile.readline()
         return ofile
 
-    def read_file_lines(self, ofile, sid=None):
+    def read_file_lines(self, ofile, sid=None, since=None, until=None):
         data = []
         buff = ""
+
+        def convert_dt(ts_dt):
+            # convert dt to timestamp float
+            # dt can be timestamp, date time, or iso string
+            if not ts_dt:
+                return None
+            try:
+                return float(ts_dt)
+            except ValueError:
+                pass
+            ts_dt = str(ts_dt)
+            dt_str = ts_dt + "0000-01-01 00:00:00,000000"[len(ts_dt):]
+            try:
+                dt = datetime.datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S,%f")
+                return time.mktime(dt.timetuple()) + dt.microsecond / 1000000
+            except ValueError:
+                pass
+            try: # iso datetime (python3.7+ only)
+                dt = datetime.datetime.fromisoformat(ts_dt)
+                return dt.timestamp()
+            except AttributeError:
+                self.log.warning("invalid datetime format '%s' (iso not supported)", ts_dt)
+            except ValueError:
+                self.log.warning("invalid datetime format '%s'", ts_dt)
+                return None
+
+        since = convert_dt(since)
+        until = convert_dt(until)
+
         def parse(_buff):
             head, message = _buff.split(" | ", 1)
             date_s, time_s, lvl, meta = head.split(None, 3)
@@ -2066,6 +2095,12 @@ class ClientHandler(shared.OsvcThread):
                     # new msg, push pending buff
                     try:
                         parse_data = parse(buff)
+                        if since and parse_data["t"] < since:
+                            buff = line
+                            continue
+                        if until and parse_data["t"] > until:
+                            buff = ""
+                            break
                         if sid:
                             if parse_data["x"]["sid"] == sid:
                                 data.append(parse_data)
@@ -2080,6 +2115,8 @@ class ClientHandler(shared.OsvcThread):
             # EOF, push pending buff
             try:
                 parse_data = parse(buff)
+                if since and parse_data["t"] < since:
+                    return data
                 if sid and parse_data["x"]["sid"] != sid:
                     return data
                 data.append(parse_data)

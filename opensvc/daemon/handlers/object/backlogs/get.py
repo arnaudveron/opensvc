@@ -33,6 +33,20 @@ class Handler(daemon.handler.BaseHandler):
             "default": None,
             "desc": "The session id to filter from the log file tail.",
         },
+        {
+            "name": "since",
+            "required": False,
+            "format": "string",
+            "default": None,
+            "desc": "The timestamp to limit result since (timestamp or datetime)",
+        },
+        {
+            "name": "until",
+            "required": False,
+            "format": "string",
+            "default": None,
+            "desc": "The timestamp to limit result until (timestamp or datetime)",
+        },
     ]
     access = {
         "roles": ["guest"],
@@ -46,5 +60,5 @@ class Handler(daemon.handler.BaseHandler):
             raise ex.HTTP(404, "%s not found" % options.path)
         logfile = os.path.join(svc.log_d, svc.name+".log")
         ofile = thr._action_logs_open(logfile, options.backlog, svc.path)
-        return thr.read_file_lines(ofile, options.sid)
+        return thr.read_file_lines(ofile, sid=options.sid, since=options.since, until=options.until)
 

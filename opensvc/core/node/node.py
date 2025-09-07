@@ -3524,8 +3524,8 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
         nodes = self.nodes_selector(node)
         auto = sorted(nodes, reverse=True)
         self._backlogs(server=self.options.server, node=node,
-                       backlog=self.options.backlog,
-                       debug=self.options.debug,
+                       backlog=self.options.backlog, since=self.options.since,
+                       until=self.options.until, debug=self.options.debug,
                        auto=auto)
         if not self.options.follow:
             return
@@ -3539,10 +3539,10 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             if exc.errno == EPIPE:
                 return
 
-    def _backlogs(self, server=None, node=None, backlog=None, debug=False, auto=None):
+    def _backlogs(self, server=None, node=None, backlog=None, since=None, until=None, debug=False, auto=None):
         from utilities.render.color import colorize_log_line
         lines = []
-        for line in self.daemon_backlogs(server, node, backlog, debug):
+        for line in self.daemon_backlogs(server, node, backlog, since, until, debug):
             line = colorize_log_line(line, auto=auto)
             if line:
                 try:
@@ -4926,11 +4926,13 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             self.unset_lazy("cluster_names")
             self.unset_lazy("cluster_key")
 
-    def daemon_backlogs(self, server=None, node=None, backlog=None, debug=False):
+    def daemon_backlogs(self, server=None, node=None, backlog=None, since=None, until=None, debug=False):
         req = {
             "action": "node_backlogs",
             "options": {
                 "backlog": backlog,
+                "since": since,
+                "until": until,
                 "debug": debug,
             }
         }
