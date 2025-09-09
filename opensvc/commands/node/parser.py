@@ -271,6 +271,11 @@ OPT = Storage({
         "--save", default=False,
         action="store_true", dest="save",
         help="Save the collector cli settings to the file specified by --config or ~/.opensvc-cli by default."),
+    "since": Option(
+        "--since", default=None,
+        action="store", dest="since",
+        help="Limit result to log since timestamp "
+             "from the log file tail. Default is None."),
     "stats_dir": Option(
         "--stats-dir", default=None,
         action="store", dest="stats_dir",
@@ -311,6 +316,11 @@ OPT = Storage({
         action="store", dest="time",
         help="Number of seconds to wait for an async action to "
              "finish. The default is 5 minutes."),
+    "until": Option(
+        "--until", default=None,
+        action="store", dest="until",
+        help="Limit result to log until timestamp "
+             "from the log file tail. Default is None."),
     "user": Option(
         "--user", default=None, action="store", dest="user",
         help="Authenticate with the collector using the "
@@ -385,6 +395,8 @@ ACTIONS = {
             "options": [
                 OPT.backlog,
                 OPT.follow,
+                OPT.since,
+                OPT.until,
             ]
         },
         "ping": {

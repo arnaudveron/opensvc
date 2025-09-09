@@ -271,6 +271,11 @@ OPT = Storage({
         action="store", dest="sid",
         help="Session id to filter "
              "from the log file tail. Default is None."),
+    "since": Option(
+        "--since", default=None,
+        action="store", dest="since",
+        help="Limit result to log since timestamp "
+             "from the log file tail. Default is None."),
     "slave": Option(
         "--slave", default=None, action="store", dest="slave",
         help="Limit the action to the service resources in the specified, comma-"
@@ -316,6 +321,11 @@ OPT = Storage({
         action="store_true", dest="unprovision",
         help="Unprovision the service resources before config files file deletion. "
              "Defaults to False."),
+    "until": Option(
+        "--until", default=None,
+        action="store", dest="until",
+        help="Limit result to log until timestamp "
+             "from the log file tail. Default is None."),
     "value": Option(
         "--value", default=None,
         action="store", dest="value",
@@ -406,6 +416,8 @@ ACTIONS = {
                 OPT.follow,
                 OPT.nopager,
                 OPT.sid,
+                OPT.since,
+                OPT.until,
             ]
         },
         "ls": {

@@ -1965,13 +1965,15 @@ class BaseSvc(Crypt, ExtConfigMixin):
     # daemon communications
     #
     #########################################################################
-    def daemon_backlogs(self, server=None, node=None, backlog=None, sid=None, debug=False):
+    def daemon_backlogs(self, server=None, node=None, backlog=None, sid=None, since=None, until=None, debug=False):
         req = {
             "action": "object_backlogs",
             "options": {
                 "path": self.path,
                 "backlog": backlog,
                 "sid": sid,
+                "since": since,
+                "until": until,
                 "debug": debug,
             }
         }
@@ -2252,8 +2254,8 @@ class BaseSvc(Crypt, ExtConfigMixin):
         auto = sorted(nodes, reverse=True)
         self._backlogs(server=self.options.server, node=node,
                        backlog=self.options.backlog, sid=self.options.sid,
-                       debug=self.options.debug,
-                       auto=auto)
+                       since=self.options.since, until=self.options.until,
+                       debug=self.options.debug, auto=auto)
         if not self.options.follow:
             return
         try:
@@ -2266,10 +2268,10 @@ class BaseSvc(Crypt, ExtConfigMixin):
                 # broken pipe
                 return
 
-    def _backlogs(self, server=None, node=None, backlog=None, sid=None, debug=False, auto=None):
+    def _backlogs(self, server=None, node=None, backlog=None, sid=None, since=None, until=None, debug=False, auto=None):
         from utilities.render.color import colorize_log_line
         lines = []
-        for line in self.daemon_backlogs(server, node, backlog, sid, debug):
+        for line in self.daemon_backlogs(server, node, backlog, sid, since, until, debug):
             try:
                 line = colorize_log_line(line, auto=auto)
             except Exception as exc:
