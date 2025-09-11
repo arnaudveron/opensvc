@@ -168,10 +168,11 @@ class Resource(object):
     def stopped_info(self):
         """
         status info for the stopped state
+        warning if resource beeing previously stopped becomes up without been started
         """
-        if self.stopped():
+        if self.stopped() and self.rstatus in (core.status.UP, core.status.STDBY_UP):
             self.log.debug("resource %s is stopped", self.rid)
-            self.status_log("user stopped", "info")
+            self.status_log("unmanaged start", "warn")
 
     def set_stopped(self, stopped=True):
         """
@@ -601,9 +602,9 @@ class Resource(object):
         # now the rstatus can no longer be None
         if self.rstatus == core.status.UNDEF or refresh:
             self.status_logs = []
-            self.stopped_info()
             self.rstatus = self.try_status(verbose)
             self.rstatus = self.status_stdby(self.rstatus)
+            self.stopped_info()
             self.last_status_info = self.status_info()
             self.log.debug("refresh status: %s => %s",
                            core.status.Status(last_status),

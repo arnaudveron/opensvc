@@ -20,6 +20,7 @@ def fmt_flags(resource, idata):
     E  Encap
     P  Provisioned
     S  Standby
+    X  UserStopped
     """
     provisioned = resource.get("provisioned", {}).get("state")
 
@@ -30,7 +31,9 @@ def fmt_flags(resource, idata):
         retries = i_restart.get("retries", 0)
     else:  # fallback on non restart_delay support
         retries = i_restart
-    if not isinstance(restart, int) or restart < 1:
+    if resource.get("stopped"):
+        restart_flag = "X"
+    elif not isinstance(restart, int) or restart < 1:
         restart_flag = "."
     else:
         remaining_restart = restart - retries

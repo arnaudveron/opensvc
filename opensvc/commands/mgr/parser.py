@@ -450,6 +450,7 @@ ACTIONS = {
                    "(6) ``P``   Not Provisioned,   ``.`` Provisioned\n\n"
                    "(7) ``S``   Standby,           ``.`` Not Standby\n\n"
                    "(8) ``<n>`` Remaining Restart, ``+`` if more than 10,  ``.``   No Restart\n\n"
+                   "(8) ``X``   User Stopped Scope (No Restart)\n\n"
                    "",
             "options": [
                 OPT.filter,
