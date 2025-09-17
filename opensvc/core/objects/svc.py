@@ -1055,6 +1055,17 @@ class BaseSvc(Crypt, ExtConfigMixin):
             except:
                 pass
 
+    def purge_stopped_flag(self):
+        """
+        Purge all service resources stopped flag.
+        """
+        import glob
+        for fpath in glob.glob(os.path.join(self.var_d, "*#*", "stopped")):
+            try:
+                os.unlink(fpath)
+            except:
+                pass
+
     def published_action(self, action, options):
         if self.volatile:
             return False
@@ -3732,6 +3743,24 @@ class Svc(PgMixin, BaseSvc):
             results = self.vcall(trigger)
             if results[0] != 0:
                 raise ex.Error(results[2])
+
+        # early clear stopped flag
+        last = None
+        if not self.command_is_scoped():
+            self.purge_stopped_flag()
+        elif action in ["start", "startstandby"]:
+            for rset in rsets:
+                current = rset.driver_group
+                if last and current != last and (self.options.upto == last or self.options.downto == last):
+                    break
+                last = current
+                resources = rset.action_resources(action, types=_type, tags=tags, xtags=xtags, xtypes=None)
+                for resource in resources:
+                    if resource.skip:
+                        continue
+                    resource.clear_stopped()
+                    if resource.rid == self.options.upto or resource.rid == self.options.downto:
+                        break
 
         need_snap = self.need_snap_trigger(rsets, action)
 

@@ -174,34 +174,25 @@ class Resource(object):
             self.log.debug("resource %s is stopped", self.rid)
             self.status_log("unmanaged start", "warn")
 
-    def set_stopped(self, stopped=True):
+    def clear_stopped(self):
         """
-        Set the stopped state file of the resource.
+        Remove the stopped state file of the resource
         """
         try:
-            if stopped:
-                return open(self.stopped_flag, "w").close()
-            if self.stopped():
-                return os.unlink(self.stopped_flag)
+            os.unlink(self.stopped_flag)
         except:
             pass
 
-    def set_stopped_flag(self, action=None):
+    def set_stopped(self, action=None):
         """
-        Set or unset the stopped state file of the resource according to
-        the action.
-        Treat `_pg_kill` as a valid stop action => creates the stopped flag becaiuse
-        stop action --force => set_stopped_flag("stop") + set_stopped_flag("_pg_kill")
-        All other `pg_*` actions remain ignored and do not affect the
-        stopped state.
+        Set the stopped state file of the resource if action=stop
+        and command is scoped (eg. --rid xxx)
         """
-        if action in ["stop", "_pg_kill"]:
-            if self.svc.command_is_scoped():
-                self.set_stopped(True)
-                return
-        elif action.startswith("_pg"):
-            return
-        self.set_stopped(False)
+        if action == "stop" and self.svc.command_is_scoped():
+            try:
+                return open(self.stopped_flag, "w").close()
+            except:
+                pass
 
     def set_logger(self, log):
         """
@@ -386,7 +377,6 @@ class Resource(object):
                 header = ""
             self.log.info("%s%s %s", header, action, self.label)
             return
-        self.set_stopped_flag(action)
         getattr(self, action)()
 
     def do_action(self, action):
@@ -407,6 +397,7 @@ class Resource(object):
         if action == "stop" and self.is_standby and not self.svc.options.force:
             standby_action = action+'standby'
             if hasattr(self, standby_action):
+                self.set_stopped(action)
                 self.action_main(standby_action)
                 return
             else:
@@ -416,6 +407,7 @@ class Resource(object):
         self.check_requires(action)
         self.handle_confirm(action)
         self.setup_environ()
+        self.set_stopped(action)
         self.action_triggers("pre", action)
         self.action_triggers("blocking_pre", action, blocking=True)
         self.action_main(action)
@@ -979,9 +971,8 @@ class Resource(object):
     def boot(self):
         """
         Clean up actions to do on node boot before the daemon starts.
-        Remove transcient files, reset the stopped state.
         """
-        self.set_stopped(False)
+        pass
 
     def shutdown(self):
         """
