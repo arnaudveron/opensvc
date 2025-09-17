@@ -252,7 +252,7 @@ class BaseTask(Resource):
 
     def read_last_run(self):
         data = {
-            "exitcode": 0,
+            "exitcode": None,
             "at": "1970-01-01T01:00:00.000000+00:00",
             "session_id": "",
         }
