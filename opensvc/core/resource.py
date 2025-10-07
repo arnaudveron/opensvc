@@ -152,6 +152,48 @@ class Resource(object):
             os.makedirs(var_d)
         return var_d
 
+    @lazy
+    def stopped_flag(self):
+        """ 
+        transcient stopped state file path
+        """
+        return os.path.join(self.var_d, "stopped")
+
+    def stopped(self):
+        """
+        Return True if the resource has been stopped.
+        """
+        return os.path.exists(self.stopped_flag)
+
+    def stopped_info(self):
+        """
+        status info for the stopped state
+        warning if resource beeing previously stopped becomes up without been started
+        """
+        if self.stopped() and self.rstatus in (core.status.UP, core.status.STDBY_UP):
+            self.log.debug("resource %s is stopped", self.rid)
+            self.status_log("unmanaged start", "warn")
+
+    def clear_stopped(self):
+        """
+        Remove the stopped state file of the resource
+        """
+        try:
+            os.unlink(self.stopped_flag)
+        except:
+            pass
+
+    def set_stopped(self, action=None):
+        """
+        Set the stopped state file of the resource if action=stop
+        and command is scoped (eg. --rid xxx)
+        """
+        if action == "stop" and self.svc.command_is_scoped():
+            try:
+                return open(self.stopped_flag, "w").close()
+            except:
+                pass
+
     def set_logger(self, log):
         """
         Set the <log> logger as the resource logger, in place of the default
@@ -355,6 +397,7 @@ class Resource(object):
         if action == "stop" and self.is_standby and not self.svc.options.force:
             standby_action = action+'standby'
             if hasattr(self, standby_action):
+                self.set_stopped(action)
                 self.action_main(standby_action)
                 return
             else:
@@ -364,6 +407,7 @@ class Resource(object):
         self.check_requires(action)
         self.handle_confirm(action)
         self.setup_environ()
+        self.set_stopped(action)
         self.action_triggers("pre", action)
         self.action_triggers("blocking_pre", action, blocking=True)
         self.action_main(action)
@@ -552,6 +596,7 @@ class Resource(object):
             self.status_logs = []
             self.rstatus = self.try_status(verbose)
             self.rstatus = self.status_stdby(self.rstatus)
+            self.stopped_info()
             self.last_status_info = self.status_info()
             self.log.debug("refresh status: %s => %s",
                            core.status.Status(last_status),

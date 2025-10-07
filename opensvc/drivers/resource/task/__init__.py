@@ -206,6 +206,15 @@ class BaseTask(Resource):
     def boot(self):
         self.remove_last_run()
 
+    def stopped(self):
+        return False
+
+    def set_stopped(self, action=None):
+        pass
+
+    def clear_stopped(self):
+        pass
+
     @lazy
     def running_d(self):
         return os.path.join(self.var_d, "run")
