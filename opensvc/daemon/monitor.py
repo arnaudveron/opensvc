@@ -1522,7 +1522,7 @@ class Monitor(shared.OsvcThread, MonitorObjectOrchestratorManualMixin):
             if smon.local_expect != "started":
                 return False
             res = svc.get_resource(rid, with_encap=True)
-            if res.stopped():
+            if res is None or res.stopped():
                 return False
             try:
                 nb_restart = res.nb_restart
@@ -1586,7 +1586,7 @@ class Monitor(shared.OsvcThread, MonitorObjectOrchestratorManualMixin):
             if resource.get("standby") is not True:
                 return False
             res = svc.get_resource(rid, with_encap=True)
-            if res.stopped():
+            if res is None or res.stopped():
                 return False
             try:
                 nb_restart = res.nb_restart
