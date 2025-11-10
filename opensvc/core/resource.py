@@ -183,14 +183,23 @@ class Resource(object):
         except:
             pass
 
-    def set_stopped(self, action=None):
+    def clear_stopped_if_not_scoped(self):
         """
-        Set the stopped state file of the resource if action=stop
-        and command is scoped (eg. --rid xxx)
+        Clear the stopped state file of the resource if the command is not scoped (no --rid xxx)
         """
-        if action == "stop" and self.svc.command_is_scoped():
+        try:
+            if not self.svc.command_is_scoped():
+                os.unlink(self.stopped_flag)
+        except:
+            pass
+
+    def set_stopped_if_scoped(self):
+        """
+        Set the stopped state file of the resource if the command is scoped (eg. --rid xxx)
+        """
+        if self.svc.command_is_scoped():
             try:
-                return open(self.stopped_flag, "w").close()
+                open(self.stopped_flag, "w").close()
             except:
                 pass
 
@@ -397,7 +406,7 @@ class Resource(object):
         if action == "stop" and self.is_standby and not self.svc.options.force:
             standby_action = action+'standby'
             if hasattr(self, standby_action):
-                self.set_stopped(action)
+                self.set_stopped_if_scoped()
                 self.action_main(standby_action)
                 return
             else:
@@ -407,12 +416,23 @@ class Resource(object):
         self.check_requires(action)
         self.handle_confirm(action)
         self.setup_environ()
-        self.set_stopped(action)
+
+        if action in ["start", "boot"]:
+            self.clear_stopped()
+        elif action in ["shutdown", "stop"]:
+            self.clear_stopped_if_not_scoped()
+
         self.action_triggers("pre", action)
         self.action_triggers("blocking_pre", action, blocking=True)
+
+        if action in ["stop", "shutdown", "_pg_kill"]:
+            self.set_stopped_if_scoped()
+
         self.action_main(action)
+
         self.action_triggers("post", action)
         self.action_triggers("blocking_post", action, blocking=True)
+
         if self.need_refresh_status(action):
             self.status(refresh=True)
         return
@@ -1557,4 +1577,3 @@ class DataResource(Resource):
 
     def _status(self, verbose=False):
         return core.status.NA
-

@@ -215,6 +215,12 @@ class BaseTask(Resource):
     def clear_stopped(self):
         pass
 
+    def clear_stopped_if_not_scoped(self):
+        pass
+
+    def set_stopped_if_scoped(self):
+        pass
+
     @lazy
     def running_d(self):
         return os.path.join(self.var_d, "run")
