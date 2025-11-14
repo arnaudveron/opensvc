@@ -16,6 +16,13 @@ KW_QGA = {
     "at": True,
     "text": "Use vsock or vserial to communicate with the container via the qemu guest agent. This option requires qemu guest agent to be installed in the container.",
 }
+KW_QGA_OPERATIONAL_DELAY = {
+    "keyword": "qga_operational_delay",
+    "convert": "duration",
+    "at": True,
+    "text": "Wait after we successfully tested a pwd in the container, so the os is sufficiently started to accept a encap start.",
+    "default": "10",
+}
 KW_START_TIMEOUT = {   
     "keyword": "start_timeout",
     "convert": "duration",

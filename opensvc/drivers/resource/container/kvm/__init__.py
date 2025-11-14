@@ -1,10 +1,14 @@
 from __future__ import print_function
 
 import os
+import json
+import time
+import base64
+
+from xml.etree.ElementTree import ElementTree, SubElement
 
 import core.exceptions as ex
 import utilities.ping
-
 
 from .. import \
     BaseContainer, \
@@ -20,13 +24,15 @@ from .. import \
     KW_GUESTOS, \
     KW_PROMOTE_RW, \
     KW_SCSIRESERV, \
-    KW_QGA
+    KW_QGA, \
+    KW_QGA_OPERATIONAL_DELAY
 from core.resource import Resource
 from env import Env
 from utilities.cache import cache, clear_cache
 from utilities.lazy import lazy
 from core.objects.svcdict import KEYS
 from utilities.proc import justcall, which
+from utilities.string import bdecode
 
 CAPABILITIES = {
     "partitions": "1.0.1",
@@ -48,6 +54,7 @@ KEYWORDS = [
     KW_PROMOTE_RW,
     KW_SCSIRESERV,
     KW_QGA,
+    KW_QGA_OPERATIONAL_DELAY,
 ]
 
 KEYS.register_driver(
@@ -72,6 +79,7 @@ class ContainerKvm(BaseContainer):
                  snapof=None,
                  virtinst=None,
                  qga=False,
+                 qga_operational_delay=10,
                  **kwargs):
         super(ContainerKvm, self).__init__(type="container.kvm", **kwargs)
         self.refresh_provisioned_on_provision = True
@@ -80,6 +88,7 @@ class ContainerKvm(BaseContainer):
         self.snapof = snapof
         self.virtinst = virtinst or []
         self.qga = qga
+        self.qga_operational_delay = qga_operational_delay
 
     @lazy
     def cf(self):
@@ -128,9 +137,6 @@ class ContainerKvm(BaseContainer):
         return utilities.ping.check_ping(self.addr, timeout=1, count=1)
 
     def qga_exec_status(self, pid):
-        import json
-        import base64
-        from utilities.string import bdecode
         payload = {
             "execute": "guest-exec-status",
             "arguments": {
@@ -147,7 +153,6 @@ class ContainerKvm(BaseContainer):
         return data
 
     def qga_operational(self):
-        import json
         payload = {
             "execute": "guest-exec",
             "arguments": {
@@ -180,9 +185,6 @@ class ContainerKvm(BaseContainer):
 
     def qga_cp(self, src, dst):
         self.log.debug("qga cp: %s to %s", src, dst)
-        import base64
-        import json
-        import time
         payload = {
             "execute":"guest-file-open",
             "arguments":{
@@ -234,8 +236,6 @@ class ContainerKvm(BaseContainer):
         else:
             log = self.log.debug
         log("qga exec: %s", " ".join(cmd))
-        import json
-        import time
         payload = {
             "execute": "guest-exec",
             "arguments": {
@@ -277,7 +277,14 @@ class ContainerKvm(BaseContainer):
         if self.guestos == "windows":
             return True
         if self.qga:
-            return self.qga_operational()
+            v = self.qga_operational()
+            if v:
+                # qga is operational, but we have no generic method to ensure
+                # the os is far enough in the boot for a encap start to succeed
+                # (network, sssd, dockerd, ... may need to be started but we don't
+                # know if they are managed by systemd, openrc, ...)
+                time.sleep(self.qga_operational_delay)
+            return v
         else:
             return BaseContainer.operational(self)
 
@@ -405,7 +412,6 @@ class ContainerKvm(BaseContainer):
         return out.strip()
 
     def unset_partition(self):
-        from xml.etree.ElementTree import ElementTree
         tree = ElementTree()
         try:
             tree.parse(self.cf)
@@ -429,7 +435,6 @@ class ContainerKvm(BaseContainer):
 
     def set_partition(self):
         self.svc.pg.create_pg(self)
-        from xml.etree.ElementTree import ElementTree, SubElement
         tree = ElementTree()
         try:
             tree.parse(self.cf)
@@ -454,7 +459,6 @@ class ContainerKvm(BaseContainer):
     def install_drp_flag(self):
         flag_disk_path = os.path.join(Env.paths.pathvar, 'drp_flag.vdisk')
 
-        from xml.etree.ElementTree import ElementTree, SubElement
         tree = ElementTree()
         try:
             tree.parse(self.cf)
@@ -492,7 +496,6 @@ class ContainerKvm(BaseContainer):
 
     def firmware_files(self):
         l = []
-        from xml.etree.ElementTree import ElementTree
         tree = ElementTree()
         try:
             tree.parse(self.cf)
@@ -508,7 +511,6 @@ class ContainerKvm(BaseContainer):
         return l
 
     def has_efi(self):
-        from xml.etree.ElementTree import ElementTree
         tree = ElementTree()
         try:
             tree.parse(self.cf)
@@ -532,7 +534,6 @@ class ContainerKvm(BaseContainer):
             return []
         data = []
 
-        from xml.etree.ElementTree import ElementTree
         tree = ElementTree()
         try:
             tree.parse(self.cf)
