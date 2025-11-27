@@ -240,7 +240,13 @@ class NetworksMixin(object):
             if addr in ("127.0.0.1", "127.0.1.1", "::1") or addr.startswith("fe80:"):
                 continue
             return addr
-        raise ex.Error("node %s has no %s address" % (nodename, af))
+        if af == socket.AF_INET:
+            afs = "ipv4"
+        elif af == socket.AF_INET6:
+            afs = "ipv6"
+        else:
+            afs = "%s" % af
+        raise ex.Error("node %s has no %s address" % (nodename, afs))
 
     def routes(self, name, config=None):
         routes = []

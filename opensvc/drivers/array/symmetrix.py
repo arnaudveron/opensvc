@@ -15,6 +15,7 @@ from utilities.converters import convert_size
 from utilities.optparser import OptParser, Option
 from core.node import Node
 from utilities.proc import justcall, which
+from utilities.lazy import lazy
 
 PROG = "om array"
 OPT = Storage({
@@ -972,6 +973,25 @@ class Vmax(SymMixin):
         else:
             self.aclx = None
 
+    @lazy
+    def get_symcli_version(self):
+        symcli_bin = self.symcli_path + "/symcli"
+        out, err, ret = justcall([symcli_bin, ])
+        if ret != 0:
+            return None
+        import re
+        m = re.search(r"\(SYMCLI\)\sVersion V(\d+)\.(\d+)", out)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+        return None
+
+    def check_symcli_version(self, major, minor):
+        version = self.get_symcli_version
+        if version:
+            v_major, v_minor = version
+            return (v_major > major) or (v_major == major and v_minor > minor)
+        return None
+
     def symaccesscmd(self, cmd, xml=True, log=False):
         self.set_environ()
         cmd = ['/usr/symcli/bin/symaccess'] + cmd
@@ -1218,8 +1238,10 @@ class Vmax(SymMixin):
         self.del_map(dev)
         self.deletepair(dev)
         retry = 5
+        do_free = self.check_symcli_version(9, 1)
         while retry > 0:
-            self.free_tdev(dev)
+            if not do_free:
+                self.free_tdev(dev)
             try:
                 self.del_tdev(dev=dev, **kwargs)
                 break
