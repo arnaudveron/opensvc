@@ -109,9 +109,15 @@ OPTIONS = [
 
 
 def pid_to_ids(pid):
-    with open("/proc/%d/environ" % pid) as fp:
+    with open("/proc/%d/environ" % pid, 'rb') as fp:
         buff = fp.read()
     data = Storage()
+
+    try:
+        buff = buff.decode('utf-8')
+    except UnicodeDecodeError:
+        buff = buff.decode('utf-8', errors='replace')  # or 'ignore'
+
     for line in buff.split('\0'):
         line = line.replace("\n", "")
         try:
