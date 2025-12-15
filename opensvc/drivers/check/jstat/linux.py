@@ -109,9 +109,20 @@ OPTIONS = [
 
 
 def pid_to_ids(pid):
-    with open("/proc/%d/environ" % pid) as fp:
-        buff = fp.read()
     data = Storage()
+
+    try:
+        with open("/proc/%d/environ" % pid) as fp:
+            buff = fp.read()
+    except Exception:
+        # OSError, IOError, FileNotFoundError ...
+        return data
+
+    try:
+        buff = buff.decode('utf-8')
+    except UnicodeDecodeError:
+        buff = buff.decode('utf-8', errors='replace')  # or 'ignore'
+
     for line in buff.split('\0'):
         line = line.replace("\n", "")
         try:
