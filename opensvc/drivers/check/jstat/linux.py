@@ -112,7 +112,7 @@ def pid_to_ids(pid):
     data = Storage()
 
     try:
-        with open("/proc/%d/environ" % pid) as fp:
+        with open("/proc/%d/environ" % pid, 'rb') as fp:
             buff = fp.read()
     except Exception:
         # OSError, IOError, FileNotFoundError ...

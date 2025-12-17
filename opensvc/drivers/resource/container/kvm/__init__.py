@@ -636,3 +636,41 @@ class ContainerKvm(BaseContainer):
             self.virsh_undefine()
         self.log.info("unprovisioned")
         return True
+
+    def wait_for_shutdown(self):
+        """
+        Defines dedicated wait_for_shutdown that waits for `is_down` instead of `not is_up`.
+        The `not is_up` is not enough, `in shutdown` can take time...
+        TODO: Improve method with extra wait for not more `Id` when `State` is `shut off`
+
+        Example of shutdown state transitions during shutdown:
+            Thu Nov 27 10:24:02 CET 2025
+            Id:             19
+            ...
+            State:          running
+            ...
+
+            Thu Nov 27 10:24:31 CET 2025
+            Id:             19
+            ...
+            State:          in shutdown
+            ...
+
+            Thu Nov 27 10:24:33 CET 2025
+            Id:             19
+            ...
+            State:          shut off
+            ...
+
+            Thu Nov 27 10:24:33 CET 2025
+            Id:             -
+            ...
+            State:          shut off
+            ...
+        """
+        def fn():
+            if hasattr(self, "is_up_clear_cache"):
+                getattr(self, "is_up_clear_cache")()
+            return self.is_down()
+        self.log.info("wait for down status")
+        self.wait_for_fn(fn, self.stop_timeout, 2, errmsg="waited too long for shutdown")
