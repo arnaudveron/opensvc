@@ -4500,11 +4500,15 @@ class Monitor(shared.OsvcThread, MonitorObjectOrchestratorManualMixin):
                 self.log.debug("no 'gen' in full dataset from %s: drop", nodename)
                 return False
             if peer_gen_merged >= peer_gen_from_message:
-                self.log.debug("already installed or beyond %s gen %d dataset (current gen merged: %s): drop",
-                               nodename,
-                               peer_gen_from_message,
-                               peer_gen_merged)
-                return False
+                updated_at_from_msg = data.get("updated", 0)
+                updated_at_applied = self.nodes_data.get([nodename, "updated"], default=0)
+                if updated_at_from_msg > updated_at_applied:
+                    self.log.debug("detect hb full dataset from restarted node %s (updated: %s->%s, gen: %d->%d)",
+                                   nodename, updated_at_applied, updated_at_from_msg, peer_gen_merged, peer_gen_from_message)
+                else:
+                    self.log.debug("drop already applied hb full dataset from node %s (current gen: %d, msg gen %d)",
+                                   nodename, peer_gen_merged, peer_gen_from_message)
+                    return False
             node_status = data.get("monitor", {}).get("status")
             if node_status in ("init", "maintenance", "upgrade") and self.nodes_data.exists([nodename]):
                 for path, _, idata in self.iter_services_instances(nodenames=[nodename]):
