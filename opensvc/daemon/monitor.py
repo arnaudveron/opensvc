@@ -15,6 +15,7 @@ import uuid
 
 import daemon.shared as shared
 from core.configfile import move_config_file
+from core.comm import DEFAULT_DAEMON_TIMEOUT
 from core.freezer import Freezer
 from env import Env
 # noinspection PyUnresolvedReferences
@@ -925,7 +926,7 @@ class Monitor(shared.OsvcThread, MonitorObjectOrchestratorManualMixin):
                 "path": path,
             },
         }
-        resp = self.daemon_get(req, server=nodename)
+        resp = self.daemon_get(req, server=nodename, timeout=DEFAULT_DAEMON_TIMEOUT)
         if resp is None:
             self.log.error("unable to fetch service %s config from node %s: "
                            "received %s", path, nodename, resp)
