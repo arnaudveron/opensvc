@@ -808,7 +808,7 @@ class CollectorRpc(object):
         return self.proxy.daemon_ping(*args)
 
     def push_status(self, svcname, data, sync=True):
-        if data.get("encap", False):
+        if data.get("encap", False) is True:
             self.log.info("skip push status for encap object %s", svcname)
             return
         try:
