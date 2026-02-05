@@ -5139,8 +5139,8 @@ class Svc(PgMixin, BaseSvc):
         Usually done asynchronously and automatically by the collector thread.
         """
         status_data = self.print_status_data(mon_data=False, refresh=True)
-        if data.get("encap", False) is True:
-            self.log.info("skip push status for encap object %s", svcname)
+        if status_data.get("encap", False) is True:
+            self.log.info("skip push status for encap object %s", self.path)
             return
         if self.node.oc3_version() >= Semver(1, 0, 7):
             api_verb = "POST"
