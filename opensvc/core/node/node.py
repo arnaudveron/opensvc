@@ -4936,7 +4936,8 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
                 "debug": debug,
             }
         }
-        result = self.daemon_get(req, server=server, node=node, timeout=5)
+        # use extra timeout for huge logs
+        result = self.daemon_get(req, server=server, node=node, timeout=20)
         if "nodes" in result:
             lines = []
             for logs in result["nodes"].values():
