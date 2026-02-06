@@ -362,6 +362,11 @@ class Resource(object):
         Executes a resource trigger. Guess if the shell mode is needed from
         the trigger syntax.
         """
+        env = kwargs.get("env")
+        if env is None:
+            env = dict(os.environ)
+        env["OPENSVC_RID"] = self.rid
+        kwargs["env"] = env
         action_triggers(self, trigger, action, **kwargs)
 
     def handle_confirm(self, action):
