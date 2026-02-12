@@ -664,7 +664,7 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
         if collector_server:
             data.server = collector_server
         elif collector:
-            data.server = "%s/oc3/api" % collector
+            data.server = "%s/server" % collector
         else:
             data.server = ""
 
@@ -672,7 +672,7 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
         if collector_feeder:
             data.feeder = collector_feeder
         elif collector:
-            data.feeder = "%s/oc3/feed/api" % collector
+            data.feeder = "%s/feeder" % collector
         else:
             data.feeder = ""
 
@@ -2037,18 +2037,50 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             raise ex.Error(data["error"])
         return data["data"]["uuid"]
 
+    def register_node_oc3(self):
+        api_verb = "POST"
+        api_path = oc3path.SERVER_NODE_REGISTER
+
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        if self.options.user:
+            username, password = self.collector_auth_user()
+            basic_value = base64encode('%s:%s' % (username, password)).replace("\n", "")
+            if basic_value:
+                headers["Authorization"] = "Basic %s" % basic_value
+
+        data = {"nodename": Env.nodename}
+        if self.options.app:
+            data["app"] = self.options.app
+
+        status_code, resp = self.oc3_request_server(api_verb, api_path, collector_basic_node=False, headers=headers, data=data)
+        if status_code != 200:
+            raise ex.Error("%s %s unexpected status code: %d: %s" % (api_verb, api_path, status_code, resp))
+        uuid = resp.get("uuid", "")
+        info = resp.get("info")
+        if info is None:
+            print("node is registered")
+        else:
+            print(info)
+        return uuid
+
+    def register_node_oc2(self):
+        if self.options.user is not None:
+            return self.register_as_user()
+        else:
+            return self.register_as_node()
+
     def register(self):
         """
-        Do anonymous or indentified node register to obtain a node uuid
+        Do anonymous or authenticated node register to obtain a node uuid
         that will be used as a password valid for the current hostname used
         as a username in the application code context.
         """
-        if self.options.user is not None:
-            register_fn = "register_as_user"
-        else:
-            register_fn = "register_as_node"
         try:
-            uuid = getattr(self, register_fn)()
+            if self.collector_env.server:
+                uuid = self.register_node_oc3()
+            else:
+                uuid = self.register_node_oc2()
+                print("registered")
         except ex.Error as exc:
             print(exc, file=sys.stderr)
             return 1
@@ -2063,7 +2095,6 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
                   file=sys.stderr)
             return 1
 
-        print("registered")
         self.options.syncrpc = True
         self.pushasset()
         self.pushdisks()
@@ -3003,7 +3034,7 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             base_url = self.collector_env.feeder
         return self.oc3_request(method, rpath, base_url=base_url, headers=headers, data=data, timeout=timeout, **kwargs)
 
-    def oc3_request(self, method, rpath, base_url=None, headers=None, data=None, timeout=None, **kwargs):
+    def oc3_request(self, method, rpath, base_url=None, headers=None, data=None, timeout=None, collector_basic_node=True, **kwargs):
         """
         Make a request to the collector's oc3 api and returns status code and json decoded response
 
@@ -3036,7 +3067,8 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
 
         request = Request(url, headers=headers)
         request.get_method = lambda: method
-        request.add_header("Authorization", "Basic %s" % self.collector_basic_node())
+        if collector_basic_node and "Authorization" not in headers.keys():
+            request.add_header("Authorization", "Basic %s" % self.collector_basic_node())
 
         if data is not None:
             try:

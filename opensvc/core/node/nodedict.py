@@ -421,14 +421,14 @@ KEYWORDS = [
     {
         "section": "node",
         "keyword": "collector_feeder",
-        "example": "https://collector.opensvc.com/oc3/feed",
-        "text": "OpenSVC enables Collector v3 feeder calls upon detection of a collector v3 instance. When the feeder path is undefined, the system automatically constructs it using the format: node.collector + /oc3/feed."
+        "example": "https://collector.opensvc.com/feeder",
+        "text": "OpenSVC enables Collector v3 feeder calls upon detection of a collector v3 instance. When the feeder path is undefined, the system automatically constructs it using the format: node.collector + /feeder."
     },
     {
         "section": "node",
         "keyword": "collector_server",
-        "example": "https://collector.opensvc.com/oc3",
-        "text": "OpenSVC enables Collector v3 server calls upon detection of a collector v3 instance. When the server path is undefined, the system automatically constructs it using the format: node.collector + /oc3."
+        "example": "https://collector.opensvc.com/server",
+        "text": "OpenSVC enables Collector v3 server calls upon detection of a collector v3 instance. When the server path is undefined, the system automatically constructs it using the format: node.collector + /server."
     },
     {
         "section": "node",

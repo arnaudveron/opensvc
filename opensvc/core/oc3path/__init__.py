@@ -1,5 +1,9 @@
 # Defines the API endpoints for OC3
 
+# Server api paths
+SERVER_NODE_REGISTER = "/api/auth/node"
+
+# Feeder api paths
 FEED_DAEMON_PING = "/api/daemon/ping"
 FEED_DAEMON_STATUS = "/api/daemon/status"
 
