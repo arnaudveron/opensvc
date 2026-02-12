@@ -1554,7 +1554,7 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
                             "vendor": disk["vendor"],
                             "model": disk["model"],
                             "dg": disk["dg"],
-                            "region": service["region"]
+                            "region": str(service["region"])
                         })
                     if disk["used"] < disk["size"]:
                         l.append({
