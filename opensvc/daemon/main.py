@@ -478,7 +478,9 @@ class Daemon(object):
 
     @staticmethod
     def _need_collector():
-        return shared.NODE and shared.NODE.collector_env.dbopensvc and shared.NODE.collector_env.uuid
+        return (shared.NODE and
+                (shared.NODE.collector_env.dbopensvc or shared.NODE.collector_env.feeder) and
+                shared.NODE.collector_env.uuid)
 
     def init_nodeconf(self):
         if not os.path.exists(Env.paths.pathetc):
