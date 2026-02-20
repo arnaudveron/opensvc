@@ -1184,9 +1184,8 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
                     pkg["sig"] = l[6]
                 return pkg
             body = {"package": [to_pkg_dict(l) for l in pkgs]}
-            status_code, _ = self.oc3_request_feed(api_verb, api_path, data=body)
-            if status_code != 202:
-                raise ex.Error("%s %s unexpected status code: %d" % (api_verb, api_path, status_code))
+            status_code, resp = self.oc3_request_feed(api_verb, api_path, data=body)
+            self.oc3_assert_status_code(api_verb, api_path, status_code, resp, expected=[202])
         else:
             self.collector.call('push_pkg', pkgs)
 
@@ -1218,9 +1217,8 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
                     if "last_boot" in system_dict.get("properties", {}):
                         last_boot = system_dict["properties"]["last_boot"]["value"]
                         system_dict["properties"]["last_boot"]["value"] = RFC3339().from_epoch(last_boot)
-                    status_code, _ = self.oc3_request_feed(api_verb, api_path, data=system_dict)
-                    if status_code != 202:
-                        raise ex.Error("%s %s unexpected status code: %d" % (api_verb, api_path, status_code))
+                    status_code, resp = self.oc3_request_feed(api_verb, api_path, data=system_dict)
+                    self.oc3_assert_status_code(api_verb, api_path, status_code, resp, expected=[202])
                 else:
                     asset_dict = self.asset.system_dict_to_asset_dict(system_dict)
                     self.collector.call('push_asset', self, asset_dict)
@@ -1567,9 +1565,8 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
                             "dg": disk["dg"],
                             "region": "0"
                         })
-                status_code, _ = self.oc3_request_feed(api_verb, api_path, data={"data": l})
-                if status_code != 202:
-                    raise ex.Error("%s %s unexpected status code: %d" % (api_verb, api_path, status_code))
+                status_code, resp = self.oc3_request_feed(api_verb, api_path, data={"data": l})
+                self.oc3_assert_status_code(api_verb, api_path, status_code, resp, expected=[202])
                 # TODO: ensure "served_disks" from data is not anymore used
             else:
                 self.collector.call('push_disks', data)
@@ -3103,6 +3100,21 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             return returns(err.code, err)
         except Exception as err:
             raise ex.Error("oc3 %s %s error: %s" % (method, url, str(err)))
+
+    @staticmethod
+    def oc3_assert_status_code(api_verb, api_path, status_code, response, expected=None):
+        if expected is None and status_code < 500:
+            return
+        elif status_code in expected:
+            return
+        elif response is None:
+            raise ex.Error("oc3 %s %s status [%d]" % (api_verb, api_path, status_code))
+
+        try:
+            text = json.loads(response).get("text", "")
+            raise ex.Error("oc3 %s %s status [%d] %s" % (api_verb, api_path, status_code, text))
+        except Exception:
+            raise ex.Error("oc3 %s %s status [%d]" % (api_verb, api_path, status_code))
 
     def svc_conf_from_templ(self, name, namespace, kind, template):
         """

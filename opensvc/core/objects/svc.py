@@ -1343,7 +1343,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
                 if status_code == 202:
                     self.log.debug("%s %s accepted", api_verb, api_path)
                 else:
-                    raise ex.Error("%s %s unexpected status code %d: %s" % (api_verb, api_path, status_code, response_data))
+                    self.node.oc3_assert_status_code(api_verb, api_path, status_code, response_data, expected=[202])
             except Exception:
                 # Ignore the error and continue, push_end_action may succeed
                 pass
@@ -1400,9 +1400,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
                 elif status_code == 400:
                     self.log.debug("%s %s bad request ignored, no replay", api_verb, api_path)
                 else:
-                    self.log.debug("%s %s unexpected status code %d: %s" % (api_verb, api_path, status_code, response_data))
-                    raise ex.Error(
-                        "%s %s unexpected status code %d" % (api_verb, api_path, status_code))
+                    self.node.oc3_assert_status_code(api_verb, api_path, status_code, response_data, expected=[202, 400])
             except Exception as exc:
                 self.log.debug(
                     "%s %s unexpected error: %s" % (api_verb, api_path, str(exc)))
@@ -5159,7 +5157,7 @@ class Svc(PgMixin, BaseSvc):
                 elif status_code == 202:
                     self.log.info("%s %s accepted but not yet processed", api_verb, api_path)
                 else:
-                    raise ex.Error("%s %s unexpected status code %d: %s" % (api_verb, api_path, status_code, response_data))
+                    self.node.oc3_assert_status_code(api_verb, api_path, status_code, response_data, expected=[200, 202])
             except Exception as exc:
                 raise ex.Error(str(exc))
         else:
@@ -5178,8 +5176,7 @@ class Svc(PgMixin, BaseSvc):
             try:
                 data = self.oc3_object_config_body()
                 status_code, response_data = self.node.oc3_request_feed(api_verb, api_path, data=data, headers=headers)
-                if status_code != 202:
-                    raise ex.Error("%s %s unexpected status code %d: %s" % (api_verb, api_path, status_code, response_data))
+                self.node.oc3_assert_status_code(api_verb, api_path, status_code, response_data, expected=[202])
             except Exception as exc:
                 raise ex.Error(str(exc))
         else:
@@ -5198,8 +5195,7 @@ class Svc(PgMixin, BaseSvc):
             try:
                 data = self.oc3_instance_resource_info_body()
                 status_code, response_data = self.node.oc3_request_feed(api_verb, api_path, data=data, headers=headers)
-                if status_code != 202:
-                    raise ex.Error("%s %s unexpected status code %d: %s" % (api_verb, api_path, status_code, response_data))
+                self.node.oc3_assert_status_code(api_verb, api_path, status_code, response_data, expected=[202])
             except Exception as exc:
                 raise ex.Error(str(exc))
         else:
