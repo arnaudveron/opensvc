@@ -3,6 +3,7 @@ The module defining the Svc class.
 """
 from __future__ import print_function, unicode_literals
 
+import base64
 import hashlib
 import itertools
 import logging
@@ -17,6 +18,7 @@ from errno import ECONNREFUSED
 import core.exceptions as ex
 import core.logger
 import core.status
+import core.oc3path as oc3path
 import utilities.lock
 from core.comm import Crypt, DEFAULT_DAEMON_TIMEOUT
 from core.configfile import move_config_file
@@ -38,6 +40,8 @@ from utilities.naming import (fmt_path, resolve_path, svc_pathcf, svc_pathetc,
                               svc_pathlog, svc_pathtmp, svc_pathvar, new_id, factory, split_path)
 from utilities.proc import (action_triggers, drop_option, has_option, find_editor,
                             init_locale, justcall, lcall, vcall)
+from utilities.rfc3339 import RFC3339, RFC3339Formatter
+from utilities.semver import Semver
 from utilities.storage import Storage
 from utilities.string import is_string
 
@@ -1318,17 +1322,132 @@ class BaseSvc(Crypt, ExtConfigMixin):
         except ex.Error:
             self.log.error("rollback %s failed", action)
 
-    def dblogger(self, action, begin, end, actionlogfile, err):
+    def push_begin_action(self, action, argv, begin):
+        if self.node.oc3_version() >= Semver(1, 0, 11):
+            api_verb = "POST"
+            api_path = oc3path.FEED_INSTANCE_ACTION
+            headers = {"Accept": "application/json", "Content-Type": "application/json"}
+            self.log.debug("%s %s", api_verb, api_path)
+            try:
+                data = {
+                    "path": self.path,
+                    "action": action,
+                    "argv": argv,
+                    "begin": begin,
+                    "cron": self.options.cron,
+                    "session_uuid": Env.session_uuid,
+                    "version": self.node.agent_version,
+                }
+                status_code, response_data = self.node.oc3_request_feed(api_verb, api_path, data=data, headers=headers,
+                                                                        timeout=1)
+                if status_code == 202:
+                    self.log.debug("%s %s accepted", api_verb, api_path)
+                else:
+                    self.node.oc3_assert_status_code(api_verb, api_path, status_code, response_data, expected=[202])
+            except Exception:
+                # Ignore the error and continue, push_end_action may succeed
+                pass
+        else:
+            self.node.daemon_collector_xmlrpc("begin_action", self.path,
+                                              action, self.node.agent_version,
+                                              begin, self.options.cron, Env.session_uuid,
+                                              argv)
+
+    def push_end_action(self, action, argv, begin, end, err, logfile):
         """
         Send to the collector the service status after an action, and
         the action log.
         """
-        try:
-            self.node.daemon_collector_xmlrpc("end_action", self.path, action,
-                                              begin, end, self.options.cron, Env.session_uuid,
-                                              actionlogfile, err)
-        except Exception as exc:
-            self.log.warning("failed to send logs to the collector: %s", exc)
+        if self.node.oc3_version() >= Semver(1, 0, 11):
+            api_verb = "PUT"
+            api_path = oc3path.FEED_INSTANCE_ACTION
+            headers = {"Accept": "application/json", "Content-Type": "application/json"}
+            self.log.debug("%s %s", api_verb, api_path)
+            data = {}
+            try:
+                status = "ok"
+                if err != 0:
+                    status = "err"
+
+                log_contents = ""
+                try:
+                    with open(logfile, "r") as file:
+                        log_contents = file.read()
+                except:
+                    pass
+                finally:
+                    try:
+                        os.unlink(logfile)
+                    except:
+                        pass
+
+                data = {
+                    "path": self.path,
+                    "action": action,
+                    "argv": argv,
+                    "begin": begin,
+                    "end": end,
+                    "status": status,
+                    "status_log": log_contents,
+                    "cron": self.options.cron,
+                    "session_uuid": Env.session_uuid,
+                    "version": self.node.agent_version,
+                }
+                status_code, response_data = self.node.oc3_request_feed(api_verb, api_path, data=data, headers=headers,
+                                                                        timeout=1)
+                if status_code == 202:
+                    self.log.debug("%s %s accepted", api_verb, api_path)
+                elif status_code == 400:
+                    self.log.debug("%s %s bad request ignored, no replay", api_verb, api_path)
+                else:
+                    self.node.oc3_assert_status_code(api_verb, api_path, status_code, response_data, expected=[202, 400])
+            except Exception as exc:
+                self.log.debug(
+                    "%s %s unexpected error: %s" % (api_verb, api_path, str(exc)))
+
+                # perhaps oc3 is not available yet, prepare a oc3 replay_file
+                replay_file = None
+                replay_file_need_close = False
+                try:
+                    import glob
+                    max_replay = 100
+                    replay_dir = os.path.join(Env.paths.pathtmpv, "oc3_replay")
+                    os.makedirs(replay_dir, exist_ok=True)
+                    replay_file_need_close = True
+                    replay_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, dir=replay_dir, suffix=".tmp",
+                                                              prefix="oc3_feed_instance_action_%s.%s."% (self.name, action))
+                    replay_files = sorted(glob.glob(os.path.join(replay_dir, "*")), key=lambda x: os.stat(x).st_mtime)
+                    if len(replay_files) > max_replay:
+                        try:
+                            os.unlink(replay_files[0])
+                        except:
+                            # perhaps already removed by another process
+                            pass
+                    json.dump(data, replay_file)
+                    self.log.debug("created retry oc3 file: %s", replay_file.name)
+                    replay_file.close()
+                    replay_file_need_close = False
+                    replay_file_json = replay_file.name[:-4] + ".json"
+                    os.rename(replay_file.name, replay_file_json)
+                    replay_file = None
+                except Exception as exc:
+                    self.log.debug("created retry oc3 failed: %s", exc)
+                    if replay_file:
+                        if replay_file_need_close:
+                            try:
+                                replay_file.close()
+                            except:
+                                pass
+                        try: os.unlink(replay_file.name)
+                        except: pass
+
+        else:
+            try:
+                self.node.daemon_collector_xmlrpc("end_action", self.path, action,
+                                                  begin, end, self.options.cron, Env.session_uuid,
+                                                  logfile, err)
+            except Exception as exc:
+                self.log.warning("failed to send logs to the collector: %s", exc)
 
         try:
             logging.shutdown()
@@ -1342,7 +1461,8 @@ class BaseSvc(Crypt, ExtConfigMixin):
         Do the action.
         Finally, feed the log to the collector.
         """
-        begin = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        rfc_time = RFC3339()
+        begin = rfc_time.from_epoch(time.time())
 
         # Provision a database entry to store action log later
         try:
@@ -1350,10 +1470,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
             if has_option("--value", argv):
                 drop_option("--value", argv, drop_value=True)
                 argv.append("--value=xxx")
-            self.node.daemon_collector_xmlrpc("begin_action", self.path,
-                                              action, self.node.agent_version,
-                                              begin, self.options.cron, Env.session_uuid,
-                                              argv)
+            self.push_begin_action(action, argv, begin)
         except Exception as exc:
             self.log.warning("failed to init logs on the collector: %s", exc)
             self.log_action_header(action, options)
@@ -1364,8 +1481,13 @@ class BaseSvc(Crypt, ExtConfigMixin):
                                               prefix=self.name+'.'+action)
         actionlogfile = tmpfile.name
         tmpfile.close()
-        fmt = "%(asctime)s;;%(name)s;;%(levelname)s;;%(message)s;;%(process)d;;EOL"
-        actionlogformatter = logging.Formatter(fmt)
+        if self.node.oc3_version() >= Semver(1, 0, 11):
+            fmt = "%(asctime)s %(levelname)s [%(process)d] %(message)s"
+            actionlogformatter = RFC3339Formatter(fmt)
+        else:
+            fmt = "%(asctime)s;;%(name)s;;%(levelname)s;;%(message)s;;%(process)d;;EOL"
+            actionlogformatter = logging.Formatter(fmt)
+
         actionlogfilehandler = logging.FileHandler(actionlogfile)
         actionlogfilehandler.setFormatter(actionlogformatter)
         actionlogfilehandler.setLevel(logging.INFO)
@@ -1377,8 +1499,8 @@ class BaseSvc(Crypt, ExtConfigMixin):
         # Push result and logs to database
         actionlogfilehandler.close()
         self.logger.removeHandler(actionlogfilehandler)
-        end = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.dblogger(action, begin, end, actionlogfile, err)
+        end = rfc_time.from_epoch(time.time())
+        self.push_end_action(action, argv, begin, end, err, actionlogfile)
         return err
 
     def log_action_obfuscate_secret(self, options):
@@ -2924,6 +3046,38 @@ class BaseSvc(Crypt, ExtConfigMixin):
             "encap": self.encap,
             "ha": self.ha,
         })
+
+    def has_monitored_resources(self):
+        return False
+
+    def oc3_object_config_body(self):
+        try:
+            with open(self.paths.cf, "rb") as file:
+                file_content = file.read()
+                raw_config = base64.b64encode(file_content).decode("utf-8")
+                if raw_config == "":
+                    raise ex.Error("empty config file")
+
+                return {
+                    "path": self.path,
+                    "orchestrate": self.orchestrate,
+                    "topology": self.topology,
+                    "flex_min": self.flex_min,
+                    "flex_max": self.flex_max,
+                    "flex_target": self.flex_target,
+                    "env": self.svc_env,
+                    "scope": self.ordered_nodes,
+                    "drpnode": self.drpnode,
+                    "drpnodes": self.ordered_drpnodes,
+                    "comment": self.comment,
+                    "app": self.app,
+                    # TODO: use real value for monitored_resource_count instead of 1
+                    "monitored_resource_count": 1 if self.has_monitored_resources() else 0,
+                    "encap": self.encap,
+                    "raw_config": raw_config,
+                }
+        except Exception as err:
+            raise ex.Error("prepare oc3 feed object body: %s" % str(err))
 
 
 class Svc(PgMixin, BaseSvc):
@@ -4870,6 +5024,42 @@ class Svc(PgMixin, BaseSvc):
             return
         self.print_status_data(mon_data=False, refresh=True)
 
+    def oc3_instance_resource_info_body(self):
+        """
+        Returns the body to POST oc3 instance resource info
+        """
+        data = {
+            "path": self.path,
+            "topology": self.topology,
+        }
+        info = []
+        for res in self.get_resources():
+            keys = []
+            try:
+                _data = res.info()
+            except Exception as exc:
+                _data = []
+                import traceback
+                traceback.print_exc()
+            for __data in _data:
+                keys.append({"key": __data[-2], "value": __data[-1]})
+            if len(keys) > 0:
+                info.append({"rid": res.rid, "keys": keys})
+
+        if "env" in self.cd:
+            keys = []
+            for key in self.cd["env"]:
+                try:
+                    val = self.conf_get("env", key)
+                except ex.OptNotFound as exc:
+                    continue
+                keys.append({"key": key if key is not None else "", "value": val if val is not None else ""})
+            if len(keys) > 0:
+                info.append({"rid": "env", "keys": keys})
+
+        data["info"] = info
+        return data
+
     def resinfo(self):
         """
         Return a list of (key, val) for each service resource and
@@ -4946,21 +5136,70 @@ class Svc(PgMixin, BaseSvc):
         Push the service instance status to the collector synchronously.
         Usually done asynchronously and automatically by the collector thread.
         """
-        self.node.collector.call('push_status', self.path, self.print_status_data(mon_data=False, refresh=True))
+        status_data = self.print_status_data(mon_data=False, refresh=True)
+        if status_data.get("encap", False) is True:
+            self.log.info("skip push status for encap object %s", self.path)
+            return
+        if self.node.oc3_version() >= Semver(1, 0, 7):
+            api_verb = "POST"
+            api_path = oc3path.FEED_INSTANCE_STATUS + "?sync=true"
+            headers = {"Accept": "application/json", "Content-Type": "application/json"}
+            self.log.info("%s %s", api_verb, api_path)
+            try:
+                data = {
+                    "path": self.path,
+                    "version": "2.1",
+                    "data": status_data,
+                }
+                status_code, response_data = self.node.oc3_request_feed(api_verb, api_path, data=data, headers=headers)
+                if status_code == 200:
+                    return None
+                elif status_code == 202:
+                    self.log.info("%s %s accepted but not yet processed", api_verb, api_path)
+                else:
+                    self.node.oc3_assert_status_code(api_verb, api_path, status_code, response_data, expected=[200, 202])
+            except Exception as exc:
+                raise ex.Error(str(exc))
+        else:
+            self.node.collector.call('push_status', self.path, status_data)
 
     def push_config(self):
         """
         Push the service config to the collector. Usually done
         automatically by the collector thread.
         """
-        self.node.collector.call('push_config', self.send_service_config_args())
+        if self.node.oc3_version() >= Semver(1, 0, 3):
+            api_verb = "POST"
+            api_path = oc3path.FEED_OBJECT_CONFIG
+            headers = {"Accept": "application/json", "Content-Type": "application/json"}
+            self.log.info("%s %s", api_verb, api_path)
+            try:
+                data = self.oc3_object_config_body()
+                status_code, response_data = self.node.oc3_request_feed(api_verb, api_path, data=data, headers=headers)
+                self.node.oc3_assert_status_code(api_verb, api_path, status_code, response_data, expected=[202])
+            except Exception as exc:
+                raise ex.Error(str(exc))
+        else:
+            self.node.collector.call('push_config', self.send_service_config_args())
 
     def push_resinfo(self):
         """
         The 'push_resinfo' scheduler task and action entrypoint.
         Push the per-resource key/value pairs to the collector.
         """
-        return self._push_resinfo(sync=self.options.syncrpc)
+        if self.node.oc3_version() >= Semver(1, 0, 6):
+            api_verb = "POST"
+            api_path = oc3path.FEED_INSTANCE_RESINFO
+            headers = {"Accept": "application/json", "Content-Type": "application/json"}
+            self.log.info("%s %s", api_verb, api_path)
+            try:
+                data = self.oc3_instance_resource_info_body()
+                status_code, response_data = self.node.oc3_request_feed(api_verb, api_path, data=data, headers=headers)
+                self.node.oc3_assert_status_code(api_verb, api_path, status_code, response_data, expected=[202])
+            except Exception as exc:
+                raise ex.Error(str(exc))
+        else:
+            return self._push_resinfo(sync=self.options.syncrpc)
 
     def _push_resinfo(self, sync=False):
         """

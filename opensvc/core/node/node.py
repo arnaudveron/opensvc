@@ -27,6 +27,7 @@ import foreign.six as six
 import core.exceptions as ex
 import core.logger
 import core.objects.builder
+import core.oc3path as oc3path
 from core.capabilities import capabilities
 from core.comm import Crypt, DEFAULT_DAEMON_TIMEOUT
 from core.configfile import move_config_file
@@ -54,6 +55,7 @@ from utilities.proc import call, justcall, vcall, which, check_privs, daemon_pro
     init_locale, does_call_cmd_need_shell, get_call_cmd_from_str
 from utilities.files import assert_file_exists, assert_file_is_root_only_writeable, makedirs
 from utilities.render.color import formatter
+from utilities.semver import Semver
 from utilities.storage import Storage
 from utilities.string import bdecode, base64encode
 
@@ -651,6 +653,34 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             data.uuid = node_uuid
         else:
             data.uuid = ""
+
+        collector = self.oget("node", "collector")
+        if collector:
+            data.collector = collector
+        else:
+            data.collector = ""
+
+        collector_server = self.oget("node", "collector_server")
+        if collector_server:
+            data.server = collector_server
+        elif collector:
+            data.server = "%s/server" % collector
+        else:
+            data.server = ""
+
+        collector_feeder = self.oget("node", "collector_feeder")
+        if collector_feeder:
+            data.feeder = collector_feeder
+        elif collector:
+            data.feeder = "%s/feeder" % collector
+        else:
+            data.feeder = ""
+
+        collector_timeout = self.oget("node", "collector_timeout")
+        if collector_timeout > 20:
+            collector_timeout = 20
+        data.timeout = collector_timeout
+
         return data
 
     def call(self, *args, **kwargs):
@@ -1110,12 +1140,54 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
         from utilities.asset import Asset
         return Asset(self)
 
+    def oc3_version(self):
+        "return cached oc3 version (value is maintained by collector thread)"
+        try:
+            with open(Env.paths.oc3_version, 'r') as f:
+                return Semver.parse(json.load(f).get("version", ""))
+        except:
+            return Semver()
+
     def pushpkg(self):
         """
         The pushpkg action entrypoint.
         Inventories the installed packages.
         """
-        self.collector.call('push_pkg')
+        import utilities.packages.list as p
+        pkgs = p.listpkg()
+        n = len(pkgs)
+        if n == 0:
+            print("No package found. Skip push.")
+            return
+        else:
+            print("Pushing %d packages information." % n)
+
+        if self.oc3_version() >= Semver(1, 0, 8):
+            from utilities.rfc3339 import RFC3339
+
+            rfc3339 = RFC3339()
+
+            api_verb = "POST"
+            api_path = oc3path.FEED_NODE_SYSTEM
+
+            def to_pkg_dict(l):
+                # l = (nodename, pkgname, version, arch, [type, [installed_at, [sig]]])
+                #
+                pkg = {"name": l[1], "version": l[2], "arch": l[3],
+                       "type": "", "sig": "", "installed_at": None}
+                n_fields = len(l)
+                if n_fields >= 5:
+                    pkg["type"] = l[4]
+                if n_fields >= 6:
+                    pkg["installed_at"] = rfc3339.from_epoch(l[5]) if l[5] is not None else None
+                if n_fields >= 7:
+                    pkg["sig"] = l[6]
+                return pkg
+            body = {"package": [to_pkg_dict(l) for l in pkgs]}
+            status_code, resp = self.oc3_request_feed(api_verb, api_path, data=body)
+            self.oc3_assert_status_code(api_verb, api_path, status_code, resp, expected=[202])
+        else:
+            self.collector.call('push_pkg', pkgs)
 
     def pushpatch(self):
         """
@@ -1129,14 +1201,29 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
         The pushasset action entrypoint.
         Inventories the server properties.
         """
-        data = self.asset.get_asset_dict()
+        system_dict = self.asset.get_system_dict()
         try:
             if self.options.format is None:
-                self.print_asset(data)
+                self.print_asset(system_dict)
                 return
-            self.print_data(data)
+            self.print_data(system_dict)
         finally:
-            self.collector.call('push_asset', self, data)
+            try:
+                if self.oc3_version() >= Semver(1, 0, 8):
+                    from utilities.rfc3339 import RFC3339
+                    api_verb = "POST"
+                    api_path = oc3path.FEED_NODE_SYSTEM
+
+                    if "last_boot" in system_dict.get("properties", {}):
+                        last_boot = system_dict["properties"]["last_boot"]["value"]
+                        system_dict["properties"]["last_boot"]["value"] = RFC3339().from_epoch(last_boot)
+                    status_code, resp = self.oc3_request_feed(api_verb, api_path, data=system_dict)
+                    self.oc3_assert_status_code(api_verb, api_path, status_code, resp, expected=[202])
+                else:
+                    asset_dict = self.asset.system_dict_to_asset_dict(system_dict)
+                    self.collector.call('push_asset', self, asset_dict)
+            except Exception as exc:
+                raise ex.Error(str(exc))
 
     def print_asset(self, data):
         from utilities.render.forest import Forest
@@ -1146,10 +1233,11 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
         head_node.add_column(Env.nodename, color.BOLD)
         head_node.add_column("Value", color.BOLD)
         head_node.add_column("Source", color.BOLD)
-        for key in sorted(data):
-            _data = data[key]
-            node = head_node.add_node()
-            if key not in ("targets", "lan", "uids", "gids", "hba", "hardware"):
+
+        if 'properties' in data:
+            for key in sorted(data["properties"]):
+                _data = data["properties"][key]
+                node = head_node.add_node()
                 if _data["value"] is None:
                     _data["value"] = ""
                 node.add_column(_data["title"], color.LIGHTBLUE)
@@ -1448,7 +1536,43 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             self.print_push_disks(data)
         else:
             self.print_data(data)
-        self.collector.call('push_disks', data)
+
+        try:
+            if self.oc3_version() >= Semver(1, 0, 5):
+                api_verb = "POST"
+                api_path = oc3path.FEED_NODE_DISK
+                l = []
+                for disk_id, disk in data["disks"].items():
+                    for svcname, service in disk["services"].items():
+                        l.append({
+                            "id": disk_id,
+                            "object_path": svcname,
+                            "size": disk["size"],
+                            "used": service["used"],
+                            "vendor": disk["vendor"],
+                            "model": disk["model"],
+                            "dg": disk["dg"],
+                            "region": str(service["region"])
+                        })
+                    if disk["used"] < disk["size"]:
+                        l.append({
+                            "id": disk_id,
+                            "object_path": "",
+                            "size": disk["size"],
+                            "used": disk["size"] - disk["used"],
+                            "vendor": disk["vendor"],
+                            "model": disk["model"],
+                            "dg": disk["dg"],
+                            "region": "0"
+                        })
+                status_code, resp = self.oc3_request_feed(api_verb, api_path, data={"data": l})
+                self.oc3_assert_status_code(api_verb, api_path, status_code, resp, expected=[202])
+                # TODO: ensure "served_disks" from data is not anymore used
+            else:
+                self.collector.call('push_disks', data)
+        except Exception as exc:
+            raise ex.Error(str(exc))
+
 
     def print_push_disks(self, data):
         from utilities.render.forest import Forest
@@ -1910,18 +2034,50 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             raise ex.Error(data["error"])
         return data["data"]["uuid"]
 
+    def register_node_oc3(self):
+        api_verb = "POST"
+        api_path = oc3path.SERVER_NODE_REGISTER
+
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        if self.options.user:
+            username, password = self.collector_auth_user()
+            basic_value = base64encode('%s:%s' % (username, password)).replace("\n", "")
+            if basic_value:
+                headers["Authorization"] = "Basic %s" % basic_value
+
+        data = {"nodename": Env.nodename}
+        if self.options.app:
+            data["app"] = self.options.app
+
+        status_code, resp = self.oc3_request_server(api_verb, api_path, collector_basic_node=False, headers=headers, data=data)
+        if status_code != 200:
+            raise ex.Error("%s %s unexpected status code: %d: %s" % (api_verb, api_path, status_code, resp))
+        uuid = resp.get("uuid", "")
+        info = resp.get("info")
+        if info is None:
+            print("node is registered")
+        else:
+            print(info)
+        return uuid
+
+    def register_node_oc2(self):
+        if self.options.user is not None:
+            return self.register_as_user()
+        else:
+            return self.register_as_node()
+
     def register(self):
         """
-        Do anonymous or indentified node register to obtain a node uuid
+        Do anonymous or authenticated node register to obtain a node uuid
         that will be used as a password valid for the current hostname used
         as a username in the application code context.
         """
-        if self.options.user is not None:
-            register_fn = "register_as_user"
-        else:
-            register_fn = "register_as_node"
         try:
-            uuid = getattr(self, register_fn)()
+            if self.collector_env.server:
+                uuid = self.register_node_oc3()
+            else:
+                uuid = self.register_node_oc2()
+                print("registered")
         except ex.Error as exc:
             print(exc, file=sys.stderr)
             return 1
@@ -1936,7 +2092,6 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
                   file=sys.stderr)
             return 1
 
-        print("registered")
         self.options.syncrpc = True
         self.pushasset()
         self.pushdisks()
@@ -2858,6 +3013,108 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             for chunk in iter(lambda: ufile.read(4096), b""):
                 ofile.write(chunk)
         ufile.close()
+
+    def collector_url(self, rpath):
+        return self.collector_env.dbopensvc.replace("/feed/default/call/xmlrpc", rpath)
+
+    def collector_basic_node(self):
+        username, password = self.collector_auth_node()
+        return base64encode('%s:%s' % (username, password)).replace("\n", "")
+
+    def oc3_request_server(self, method, rpath, base_url=None, headers=None, data=None, timeout=None, **kwargs):
+        if base_url is None:
+            base_url = self.collector_env.server
+        return self.oc3_request(method, rpath, base_url=base_url, headers=headers, data=data, timeout=timeout, **kwargs)
+
+    def oc3_request_feed(self, method, rpath, base_url=None, headers=None, data=None, timeout=None, **kwargs):
+        if base_url is None:
+            base_url = self.collector_env.feeder
+        return self.oc3_request(method, rpath, base_url=base_url, headers=headers, data=data, timeout=timeout, **kwargs)
+
+    def oc3_request(self, method, rpath, base_url=None, headers=None, data=None, timeout=None, collector_basic_node=True, **kwargs):
+        """
+        Make a request to the collector's oc3 api and returns status code and json decoded response
+
+        it will raise if it can't decode the http response, or if it can't get http status code
+
+        When timeout is None, the request will use timeout value from the node configuration kw: node.collector_timeout.
+        When timeout is 0, the request will wait forever.
+
+        Returns:
+            tuple[status_code, data]: A tuple containing the http status code of
+            the response and the json decoded data.
+        """
+        if base_url is None:
+            url = self.collector_url(rpath)
+        else:
+            url = "%s%s" % (base_url, rpath)
+        if not url.startswith("https://"):
+            raise ex.Error("need https protocol, got %s" % url)
+
+        if timeout is None:
+            timeout = self.collector_env.timeout
+
+        if headers is None:
+            headers = {"Accept": "application/json"}
+            if data is not None:
+                headers["Content-Type"] = "application/json"
+
+        from utilities.uri import Uri
+        headers["Host"] = Uri(url).host_header()
+
+        request = Request(url, headers=headers)
+        request.get_method = lambda: method
+        if collector_basic_node and "Authorization" not in headers.keys():
+            request.add_header("Authorization", "Basic %s" % self.collector_basic_node())
+
+        if data is not None:
+            try:
+                request.add_data(json.dumps(data).encode('utf-8'))
+            except AttributeError:
+                request.data = json.dumps(data).encode('utf-8')
+
+        kwargs = {}
+        kwargs = self.set_ssl_context(kwargs)
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+
+        def returns(ret_code, read_closer):
+            if ret_code == 204:
+                return ret_code, None
+            b = None
+            try:
+                b = read_closer.read()
+                ret_data = json.loads(b.decode("utf-8"))
+                return ret_code, ret_data
+            except Exception as decode_err:
+                self.log.debug("oc3 %s %s status code %d can't decode response: %s",
+                               method, url, ret_code, str(decode_err))
+                return ret_code, b
+            finally:
+                read_closer.close()
+
+        try:
+            resp = urlopen(request, **kwargs)
+            return returns(resp.code, resp)
+        except HTTPError as err:
+            return returns(err.code, err)
+        except Exception as err:
+            raise ex.Error("oc3 %s %s error: %s" % (method, url, str(err)))
+
+    @staticmethod
+    def oc3_assert_status_code(api_verb, api_path, status_code, response, expected=None):
+        if expected is None and status_code < 500:
+            return
+        elif status_code in expected:
+            return
+        elif response is None:
+            raise ex.Error("oc3 %s %s status [%d]" % (api_verb, api_path, status_code))
+
+        try:
+            text = json.loads(response).get("text", "")
+            raise ex.Error("oc3 %s %s status [%d] %s" % (api_verb, api_path, status_code, text))
+        except Exception:
+            raise ex.Error("oc3 %s %s status [%d]" % (api_verb, api_path, status_code))
 
     def svc_conf_from_templ(self, name, namespace, kind, template):
         """

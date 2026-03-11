@@ -384,6 +384,9 @@ class OsvcThread(threading.Thread, Crypt):
             new_state = "terminated"
         try:
             self.thread_data.set(["state"], new_state)
+            name = getattr(self, "id", "")
+            if name.startswith("hb#"):
+                self.node_data.set(["hb", name, "state"], new_state)
         except KeyError:
             pass
         self.log.info('thread exits with code %d', exit_status)
@@ -579,6 +582,7 @@ class OsvcThread(threading.Thread, Crypt):
         unset_lazy(self, "db_min_ping_interval")
         unset_lazy(self, "sorted_cluster_nodes")
         unset_lazy(self, "maintenance_grace_period")
+        unset_lazy(self, "oc3_version")
         unset_lazy(self, "rejoin_grace_period")
         unset_lazy(self, "ready_period")
         self.arbitrators_data = None

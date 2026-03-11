@@ -3,12 +3,15 @@
 """
 import logging
 import time
+from copy import deepcopy
 
 import daemon.shared as shared
 import core.exceptions as ex
 import utilities.ifconfig
 from env import Env
+from utilities.rfc3339 import RFC3339
 from utilities.storage import Storage
+
 
 class Hb(shared.OsvcThread):
     """
@@ -17,17 +20,27 @@ class Hb(shared.OsvcThread):
     interval = 5
     timeout = None
 
+    # publish interval in seconds is the minimum interval between
+    # 2 publications of node data heartbeat id statistics.
+    publish_interval = 5 * 60
+
     def __init__(self, name, role=None):
         shared.OsvcThread.__init__(self)
         self.name = name
         self.id = name + "." + role
         self.thread_data = self.daemon_status_data.view([self.id])
-        self.log = logging.LoggerAdapter(logging.getLogger(Env.nodename+".osvcd."+self.id), {"node": Env.nodename, "component": self.id})
+        self.log = logging.LoggerAdapter(logging.getLogger(Env.nodename + ".osvcd." + self.id),
+                                         {"node": Env.nodename, "component": self.id})
         self.peers = {}
         self.reset_stats()
         self.hb_nodes = []
         self.get_hb_nodes()
         self.msg_type = None
+
+        # has_changes bool is defined for early publication of
+        # node data heartbeat statistic.
+        self.has_changes = True
+        self.last_published = time.time()
 
     def get_hb_nodes(self):
         try:
@@ -67,19 +80,29 @@ class Hb(shared.OsvcThread):
             else:
                 _data = self.peers.get(nodename, Storage({
                     "last": 0,
+                    "last_at": RFC3339().from_epoch(0),
                     "beating": False,
                     "success": True,
                 }))
             data["peers"][nodename] = {
                 "last": _data.last,
+                "last_at": RFC3339().from_epoch(_data.last),
                 "beating": _data.beating if running else False,
             }
+        if self.has_changes or time.time() - self.last_published > self.publish_interval:
+            # wait for initial node_data exists (pre-init)
+            if self.node_data.exists(["hb"]):
+                self.node_data.set(["hb", self.id], deepcopy(data))
+                self.has_changes = False
+                self.last_published = time.time()
+
         return data
 
     def set_last(self, nodename="*", success=True):
         if nodename not in self.peers:
             self.peers[nodename] = Storage({
                 "last": 0,
+                "last_at": RFC3339().from_epoch(0),
                 "beating": False,
                 "success": True,
             })
@@ -91,6 +114,7 @@ class Hb(shared.OsvcThread):
                     "hb": {"name": self.name, "id": self.id},
                 })
                 self.peers[nodename].beating = True
+                self.has_changes = True
         self.peers[nodename].success = success
 
     def get_last(self, nodename="*"):
@@ -98,6 +122,7 @@ class Hb(shared.OsvcThread):
             return self.peers[nodename]
         return Storage({
             "last": 0,
+            "last_at": RFC3339().from_epoch(0),
             "beating": False,
             "success": True,
         })
@@ -114,6 +139,7 @@ class Hb(shared.OsvcThread):
         if nodename not in self.peers:
             self.peers[nodename] = Storage({
                 "last": 0,
+                "last_at": RFC3339().from_epoch(0),
                 "beating": False,
                 "success": True,
             })
@@ -124,6 +150,7 @@ class Hb(shared.OsvcThread):
         change = False
         if self.peers[nodename].beating != beating:
             change = True
+            self.has_changes = True
             if beating:
                 self.event("hb_beating", data={
                     "nodename": nodename,
@@ -137,6 +164,7 @@ class Hb(shared.OsvcThread):
                         "timeout": self.timeout,
                         "interval": self.interval,
                         "last": self.peers[nodename].last,
+                        "last_at": RFC3339().from_epoch(self.peers[nodename].last),
                     },
                 }, level="warning")
             self.peers[nodename].beating = beating
@@ -170,7 +198,7 @@ class Hb(shared.OsvcThread):
                 "compat": shared.COMPAT_VERSION,
                 "gen": self.get_gen(),
                 "monitor": self.get_node_monitor(),
-                "updated": time.time(), # for hb and relay readers
+                "updated": time.time(),  # for hb and relay readers
             }, encode=False)
             return message, len(message) if message else 0
         if begin == 0 or begin > shared.GEN:
@@ -193,7 +221,7 @@ class Hb(shared.OsvcThread):
                     shared.HB_MSG_LEN = len(shared.HB_MSG)
                 return shared.HB_MSG, shared.HB_MSG_LEN
         else:
-            self.log.debug("send gen %d-%d deltas to %s", begin, shared.GEN, nodename if nodename else "*") # COMMENT
+            self.log.debug("send gen %d-%d deltas to %s", begin, shared.GEN, nodename if nodename else "*")  # COMMENT
             if self.msg_type != 'patch':
                 self.msg_type = 'patch'
                 self.log.info('change message type to %s (gen %s)', self.msg_type, shared.GEN)
@@ -213,7 +241,7 @@ class Hb(shared.OsvcThread):
                 "kind": "patch",
                 "deltas": data,
                 "gen": self.get_gen(),
-                "updated": time.time(), # for hb and relay readers
+                "updated": time.time(),  # for hb and relay readers
             }, encode=False)
             return message, len(message) if message else 0
 

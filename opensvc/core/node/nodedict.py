@@ -414,6 +414,32 @@ KEYWORDS = [
     },
     {
         "section": "node",
+        "keyword": "collector",
+        "example": "https://collector.opensvc.com",
+        "text": "The system enables OpenSVC Collector 3 calls conditional upon the detection of the Collector 3 environment. If collector_feeder or collector_server are not explicitly defined, they are derived from this value."
+    },
+    {
+        "section": "node",
+        "keyword": "collector_feeder",
+        "example": "https://collector.opensvc.com/feeder",
+        "text": "OpenSVC enables Collector v3 feeder calls upon detection of a collector v3 instance. When the feeder path is undefined, the system automatically constructs it using the format: node.collector + /feeder."
+    },
+    {
+        "section": "node",
+        "keyword": "collector_server",
+        "example": "https://collector.opensvc.com/server",
+        "text": "OpenSVC enables Collector v3 server calls upon detection of a collector v3 instance. When the server path is undefined, the system automatically constructs it using the format: node.collector + /server."
+    },
+    {
+        "section": "node",
+        "keyword": "collector_timeout",
+        "convert": "duration",
+        "at": True,
+        "default": 5,
+        "text": "The maximum time to wait for a collector v3 call. Maximum allowed value 20."
+    },
+    {
+        "section": "node",
         "keyword": "dbcompliance",
         "example": "https://collector.opensvc.com/init/compliance/call/xmlrpc",
         "default_text": "Same protocol, server and port as dbopensvc, but with an different path.",

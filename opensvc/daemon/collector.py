@@ -1,21 +1,28 @@
 """
 Collector Thread
 """
+import glob
 import json
 import os
-import sys
 import logging
 import time
+from copy import deepcopy
 
 import daemon.shared as shared
+import core.oc3path as oc3path
 from env import Env
+from utilities.lazy import lazy, unset_lazy
 from utilities.naming import svc_pathvar, split_path
+from utilities.semver import Semver
 
 MAX_QUEUED = 1000
+RESCAN_OC3_VERSION_INTERVAL = 24 * 60 * 60
+REPLAY_OC3_INTERVAL = 5 * 60
 
 
 class Collector(shared.OsvcThread):
     name = "collector"
+    last_oc3_replay = time.time() - REPLAY_OC3_INTERVAL
 
     def reset(self):
         self.last_comm = None
@@ -23,22 +30,38 @@ class Collector(shared.OsvcThread):
         self.last_status = {}
         self.last_status_changed = set()
 
+        # force oc3 replay on collector startup or reset
+        self.last_oc3_replay = time.time() - REPLAY_OC3_INTERVAL
+
     def run(self):
         self.set_tid()
         self.log = logging.LoggerAdapter(logging.getLogger(Env.nodename+".osvcd.collector"), {"node": Env.nodename, "component": self.name})
         self.log.info("collector started")
         previous_interval_signature = ""
+        previous_oc3_version = shared.NODE.oc3_version()
+        last_scan_oc3 = time.time()
         self.reset()
+        self.log.info("collector oc3 detected version: %s", self.oc3_version)
 
         while True:
             if self.stopped():
                 self.exit()
             try:
+
+                if time.time() - last_scan_oc3 > RESCAN_OC3_VERSION_INTERVAL:
+                    unset_lazy(self, "oc3_version")
+                if previous_oc3_version != self.oc3_version:
+                    self.log.info("collector oc3 refresh version file %s: %s -> %s",
+                                  Env.paths.oc3_version, previous_oc3_version, self.oc3_version)
+                    previous_oc3_version = self.oc3_version
+                    with open(Env.paths.oc3_version, 'w') as f:
+                        json.dump({"version": str(self.oc3_version)}, f)
+
                 self.do()
                 self.update_status()
                 interval_signature = "%d-%d-%d" % (self.db_update_interval, self.db_min_update_interval, self.db_min_ping_interval)
                 if interval_signature != previous_interval_signature:
-                    self.log.info("collector thread config: update_interval=%d, min_update_interval=%d, min_ping_interval= %d",
+                    self.log.info("collector thread config: update_interval=%d, min_update_interval=%d, min_ping_interval=%d",
                                   self.db_update_interval, self.db_min_update_interval, self.db_min_ping_interval)
                     previous_interval_signature = interval_signature
             except Exception as exc:
@@ -81,13 +104,28 @@ class Collector(shared.OsvcThread):
                 if data["nodes"].get(nodename, {}).get("services", {}).get("status", {}).get(path) is None:
                     last_status_changed |= set([path, path+"@"+nodename])
 
+
+        def hb_state_signature(node_hb_data):
+            return " ".join(
+                [
+                    ",".join(
+                        [
+                            "%s:%s:%s:%s" % (hb_id, hb_data.get("state", ""), peer_name, peer_data.get("beating", ""))
+                            for peer_name, peer_data in hb_data.get("peers", {}).items()
+                        ])
+                    for hb_id, hb_data in node_hb_data.items()
+                ]
+            )
+
         for nodename, ndata in data["nodes"].items():
-            # detect node frozen changes
+            # detect node frozen, or hb changes
             node_frozen = ndata.get("frozen")
-            last_node_frozen = self.last_status.get((None, nodename), {}).get("frozen")
-            if node_frozen != last_node_frozen:
+            node_hb = hb_state_signature(ndata.get("hb", {}))
+            last_node_frozen = self.last_status.get((None, nodename), {"frozen": 0}).get("frozen", 0)
+            last_node_hb = self.last_status.get((None, nodename), {"hb": ""}).get("hb", "")
+            if node_frozen != last_node_frozen or node_hb != last_node_hb:
                 last_status_changed.add("@"+nodename)
-            last_status[(None, nodename)] = {"frozen": node_frozen}
+            last_status[(None, nodename)] = {"frozen": node_frozen, "hb": node_hb}
 
             # detect instances status changes
             for path, sdata in ndata.get("services", {}).get("status", {}).items():
@@ -120,7 +158,37 @@ class Collector(shared.OsvcThread):
                 "csum": csum,
             }, f)
 
-    def get_last_config(self, data):
+    def purge_configs_sent(self, paths):
+        for p in paths:
+            self.purge_config_sent(p)
+
+    def purge_config_sent(self, path):
+        self.log.info("purging sent config %s", path)
+        p = self.config_sent_file(path)
+        try:
+            os.unlink(p)
+        except:
+            pass
+        try:
+            del self.last_config[path]
+        except KeyError:
+            pass
+
+    def changed_config(self, data):
+        """
+        returns {"<path>": "csum", ...} where path is defined into daemondata nodes.<localhost>.services.config
+        and where the config csum differ from the value detected during last changed_config function call.
+
+        It uses config cache: self.last_config (dict {"<path>": "csum", ...}) to detect changes since last call.
+        self.last_config is refreshed on each call.
+
+        Already sent path:csum is not expected to be returned again, so during daemon startup, so we populate the
+        self.last_config from the object's config_sent.json file. This file is updated when send_service_config succeed,
+        so if send_service_config fails, same path:csum will be returned again during next daemon startup.
+
+        To force a path:csum to be returned again, we have to remove its object's config_sent.json file and delete the
+        live cache value self.last_config[path].
+        """
         last_config = {}
         last_config_changed = {}
         for path, sdata in data["nodes"].get(Env.nodename, {}).get("services", {}).get("config", {}).items():
@@ -159,6 +227,7 @@ class Collector(shared.OsvcThread):
         else:
             self.run_collector()
             self.unqueue_xmlrpc()
+            self.oc3_replay()
         if not self.stopped():
             with shared.COLLECTOR_TICKER:
                 shared.COLLECTOR_TICKER.wait(self.db_update_interval)
@@ -215,15 +284,39 @@ class Collector(shared.OsvcThread):
         if self.stopped():
             return
 
-        with shared.SERVICES_LOCK:
-            if path not in shared.SERVICES:
-                return
-            svc = shared.SERVICES[path].send_service_config_args()
+        if self.oc3_version >= Semver(1, 0, 3):
+            with shared.SERVICES_LOCK:
+                if path not in shared.SERVICES:
+                    return
+                try:
+                    data = shared.SERVICES[path].oc3_object_config_body()
+                except Exception as err:
+                    self.log.info("skip send service %s config: %s",path, str(err))
+                    return
+        else:
+            with shared.SERVICES_LOCK:
+                if path not in shared.SERVICES:
+                    return
+                data = shared.SERVICES[path].send_service_config_args()
 
-        self.log.info("send service %s config", path)
+        sent = False
         try:
-            shared.NODE.collector.call("push_config", svc)
-            sent = True
+            if self.oc3_version >= Semver(1, 0, 3):
+                begin = time.time()
+                api_verb = "POST"
+                api_path = oc3path.FEED_OBJECT_CONFIG
+                headers = {"Accept": "application/json", "Content-Type": "application/json"}
+                self.log.info("%s %s object config %s", api_verb, api_path, path)
+                status_code, _ = shared.NODE.oc3_request_feed(api_verb, api_path, data=data, headers=headers)
+                if status_code != 202:
+                    self.log.warning("%s %s unexpected status code %d for object %s completed in %0.3f",
+                                     api_verb, api_path, status_code, path, time.time() - begin)
+                else:
+                    sent = True
+            else:
+                self.log.info("send service %s config", path)
+                shared.NODE.collector.call("push_config", data)
+                sent = True
         except Exception as exc:
             self.log.error("call push_config %s: %s", path, exc)
             shared.NODE.collector.disable()
@@ -241,7 +334,27 @@ class Collector(shared.OsvcThread):
         else:
             self.log.debug("send daemon status, resync")
         try:
-            shared.NODE.collector.call("push_daemon_status", data, list(self.last_status_changed))
+            if self.oc3_version >= Semver(1, 0, 4):
+                begin = time.time()
+                api_verb = "POST"
+                api_path = oc3path.FEED_DAEMON_STATUS
+                body = {
+                    "version": "2.1",
+                    "data": data,
+                    "changes": list(self.last_status_changed)
+                }
+                status_code, response_body = shared.NODE.oc3_request_feed(api_verb, api_path, data=body)
+                if status_code != 202:
+                    self.log.warning("collector %s %s unexpected status code %d %0.3f", api_verb, api_path, status_code, time.time() - begin)
+                else:
+                    self.log.debug("collector %s %s status code %d %0.3f", api_verb, api_path, status_code, time.time() - begin)
+                    object_without_config = response_body.get("object_without_config", [])
+                    if len(object_without_config) > 0:
+                        # purge configs sent of object_without_config
+                        # => next run will send service config to collector
+                        self.purge_configs_sent(object_without_config)
+            else:
+                shared.NODE.collector.call("push_daemon_status", data, list(self.last_status_changed))
         except Exception as exc:
             self.log.error("call push_daemon_status: %s", exc)
             shared.NODE.collector.disable()
@@ -252,10 +365,34 @@ class Collector(shared.OsvcThread):
             return
         self.log.debug("ping the collector")
         try:
-            result = shared.NODE.collector.call("daemon_ping")
-            if result and result.get("info") == "resync":
-                self.log.info("ping rejected, collector ask for resync")
-                self.send_daemon_status(data)
+            if self.oc3_version >= Semver(1, 0, 4):
+                begin = time.time()
+                api_verb = "POST"
+                api_path = oc3path.FEED_DAEMON_PING
+                body = {
+                    "version": "2.1",
+                    "nodes": list(data.get("nodes", {}).keys()),
+                    "objects": list(data.get("services", {}).keys()),
+                }
+                self.log.debug("%s %s %s", api_verb, api_path, body)
+                status_code, response_body = shared.NODE.oc3_request_feed(api_verb, api_path, data=body)
+                self.log.debug("%s %s %d %0.3f", api_verb, api_path, status_code, time.time() - begin)
+                if status_code == 202:
+                    object_without_config = response_body.get("object_without_config", [])
+                    if len(object_without_config) > 0:
+                        # purge configs sent of object_without_config
+                        # => next run will send service config to collector
+                        self.purge_configs_sent(object_without_config)
+                elif status_code == 204:
+                    self.log.debug("ping rejected, collector ask for resync")
+                    self.send_daemon_status(data)
+                else:
+                    self.log.warning("%s %s unexpected status code %d completed in %0.3f", api_verb, api_path, status_code, time.time() - begin)
+            else:
+                result = shared.NODE.collector.call("daemon_ping")
+                if result and result.get("info") == "resync":
+                    self.log.info("ping rejected, collector ask for resync")
+                    self.send_daemon_status(data)
         except Exception as exc:
             self.log.error("call daemon_ping: %s", exc)
             shared.NODE.collector.disable()
@@ -312,6 +449,7 @@ class Collector(shared.OsvcThread):
                 _data["nodes"][nodename]["frozen"] = node_frozen
                 _data["nodes"][nodename]["services"]["status"][path] = instances_status[path]
                 _data["nodes"][nodename]["services"]["config"][path] = instances_config[path]
+                _data["nodes"][nodename]["hb"] = deepcopy(data["nodes"][nodename]["hb"])
                 _data["services"][path] = data["services"][path]
         return _data
 
@@ -323,8 +461,17 @@ class Collector(shared.OsvcThread):
             #self.log.debug("no service")
             return
 
-        last_config_changed = self.get_last_config(data)
-        for path, csum in last_config_changed.items():
+        # TODO: move send service config to speaker block, this require first:
+        #  1- send_service_config should support non local objects.
+        #  2- changed_config should also return the non local objects.
+        #  3- send_containerinfo should be removed (its tasks should be done
+        #     during send_daemon_status) should be sufficient
+        #  This will allow speaker to use the "object_without_config" oc3 response
+        #  and force collector object config deleted to be pushed again.
+        #  Until this, we can only fix a collector object config deleted that exists
+        #  on the collector speaker.
+        changed_config = self.changed_config(data)
+        for path, csum in changed_config.items():
             self.send_service_config(path, csum)
             self.send_containerinfo(path)
 
@@ -344,3 +491,78 @@ class Collector(shared.OsvcThread):
             elif self.last_comm <= now - self.db_min_ping_interval:
                 self.ping(data)
             self.last_status = last_status
+
+    def oc3_replay(self):
+        if time.time() - self.last_oc3_replay < REPLAY_OC3_INTERVAL:
+            return
+        elif self.oc3_version < Semver(1, 0, 11):
+            self.last_oc3_replay = time.time()
+            return
+
+        self.last_oc3_replay = time.time()
+
+        replay_dir = os.path.join(Env.paths.pathtmpv, "oc3_replay")
+        os.makedirs(replay_dir, exist_ok=True)
+
+        for f in glob.glob(os.path.join(replay_dir, "oc3_feed_instance_action_*.json")):
+            self.log.debug("replaying %s", f)
+            try:
+                data = json.load(open(f))
+                path = data.get("path", "")
+                if path == "":
+                    self.log.debug("replaying %s: unexpected empty path found", f)
+                    continue
+                begin = time.time()
+                api_verb = "PUT"
+                api_path = oc3path.FEED_INSTANCE_ACTION
+                headers = {"Accept": "application/json", "Content-Type": "application/json"}
+
+                self.log.debug("replay: %s %s instance action %s", api_verb, api_path, path)
+                status_code, _ = shared.NODE.oc3_request_feed(api_verb, api_path, data=data, headers=headers, timeout=2)
+                if status_code in [202, 400]:
+                    self.log.debug("replay: %s %s status code %d for object %s completed in %0.3f",
+                                  api_verb, api_path, status_code, path, time.time() - begin)
+                    try:
+                        os.unlink(f)
+                    except Exception as exc:
+                        self.log.debug("replaying %s unable to remove %s",f, str(exc))
+                else:
+                    self.log.debug("replay: %s %s unexpected status code %d for object %s completed in %0.3f",
+                                   api_verb, api_path, status_code, path, time.time() - begin)
+            except Exception as exc:
+                self.log.debug("replaying %s failed: %s", f, str(exc))
+
+    @lazy
+    def oc3_version(self):
+        """
+        returns the oc3 feeder api version
+
+        returned values:
+            status code 200 => version from body
+            status code 404 => null version 0.0.0
+            else fallback to previous cached version value (that may be version 0.0.0 if no previous cache)
+        """
+        null_version = Semver(0, 0, 0)
+        version = shared.NODE.oc3_version()
+        api_verb = "GET"
+        api_path = oc3path.FEED_VERSION
+        try:
+            if not shared.NODE.collector_env.feeder:
+                return null_version
+            status_code, schema = shared.NODE.oc3_request_feed(api_verb, api_path)
+            if status_code == 200:
+                if isinstance(schema, dict):
+                    s = schema.get("version", "0.0.0")
+                    version = Semver.parse(s)
+            elif status_code in [404]:
+                if version != Semver():
+                    # collector has no anymore oc3 configured, reset to null
+                    self.log.warning("oc3 version skip cache (%s %s http status code %d)", api_verb, api_path, status_code)
+                version = null_version
+            else:
+                # 502 Bad Gateway, 503 Service Unavailable: oc3 is not yet ready
+                self.log.warning("oc3 version preserve cache (%s %s http status code %d)", api_verb, api_path, status_code)
+        except Exception as err:
+            if version > null_version:
+                self.log.warning("oc3 version preserve cache (%s %s error: %s)", api_verb, api_path, str(err))
+        return version
