@@ -12,6 +12,7 @@ FEED_INSTANCE_RESINFO = "/api/instance/resource_info"
 FEED_INSTANCE_STATUS = "/api/instance/status"
 
 FEED_NODE_DISK = "/api/node/disk"
+FEED_NODE_SYSREPORT = "/api/node/sysreport"
 FEED_NODE_SYSTEM = "/api/node/system"
 
 FEED_OBJECT_CONFIG = "/api/object/config"

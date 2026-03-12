@@ -3068,10 +3068,14 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
             request.add_header("Authorization", "Basic %s" % self.collector_basic_node())
 
         if data is not None:
+            if isinstance(data, bytes):
+                raw = data
+            else:
+                raw = json.dumps(data).encode('utf-8')
             try:
-                request.add_data(json.dumps(data).encode('utf-8'))
+                request.add_data(raw)
             except AttributeError:
-                request.data = json.dumps(data).encode('utf-8')
+                request.data = raw
 
         kwargs = {}
         kwargs = self.set_ssl_context(kwargs)
