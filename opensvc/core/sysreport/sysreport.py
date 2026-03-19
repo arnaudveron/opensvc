@@ -496,8 +496,11 @@ class BaseSysReport(object):
             "Content-Type": "multipart/form-data; boundary=" + boundary,
         }
 
-        status_code, resp = self.node.oc3_request_feed("POST", oc3path.FEED_NODE_SYSREPORT, headers=headers, data=body)
-        self.node.oc3_assert_status_code("POST", oc3path.FEED_NODE_SYSREPORT, status_code, resp, expected=[202])
+        try:
+            status_code, resp = self.node.oc3_request_feed("POST", oc3path.FEED_NODE_SYSREPORT, headers=headers, data=body)
+            self.node.oc3_assert_status_code("POST", oc3path.FEED_NODE_SYSREPORT, status_code, resp, expected=[202])
+        except Exception as exc:
+            raise ex.Error(str(exc))
 
     @staticmethod
     def mangle_sep(fpath):
