@@ -455,10 +455,52 @@ class BaseSysReport(object):
             tmpf = None
 
         print("sending sysreport")
-        self.node.collector.call(self.send_rpc, tmpf, self.deleted)
+        from utilities.semver import Semver
+        if self.node.oc3_version() >= Semver(3, 0, 1):
+            self._oc3_send(tmpf, self.deleted)
+        else:
+            self.node.collector.call(self.send_rpc, tmpf, self.deleted)
 
         if tmpf is not None:
             os.unlink(tmpf)
+
+    def _oc3_send(self, fpath, deleted):
+        import uuid
+        import core.oc3path as oc3path
+
+        boundary = uuid.uuid4().hex
+        boundary_bytes = boundary.encode('utf-8')
+        parts = []
+
+        if fpath is not None:
+            with open(fpath, 'rb') as f:
+                fdata = f.read()
+            parts.append(
+                b'--' + boundary_bytes + b'\r\n' +
+                b'Content-Disposition: form-data; name="file"; filename="' +
+                os.path.basename(fpath).encode('utf-8') + b'"\r\n' +
+                b'Content-Type: application/octet-stream\r\n\r\n' +
+                fdata + b'\r\n'
+            )
+
+        for d in deleted:
+            parts.append(
+                b'--' + boundary_bytes + b'\r\n' +
+                b'Content-Disposition: form-data; name="deleted"\r\n\r\n' +
+                d.encode('utf-8') + b'\r\n'
+            )
+
+        body = b''.join(parts) + b'--' + boundary_bytes + b'--\r\n'
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "multipart/form-data; boundary=" + boundary,
+        }
+
+        try:
+            status_code, resp = self.node.oc3_request_feed("POST", oc3path.FEED_NODE_SYSREPORT, headers=headers, data=body)
+            self.node.oc3_assert_status_code("POST", oc3path.FEED_NODE_SYSREPORT, status_code, resp, expected=[202])
+        except Exception as exc:
+            raise ex.Error(str(exc))
 
     @staticmethod
     def mangle_sep(fpath):
