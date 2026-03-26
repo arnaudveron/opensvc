@@ -666,7 +666,14 @@ class ContainerDocker(BaseContainer):
         #     if len(self._threads) < self._max_workers:
         # TypeError: unorderable types: int() < NoneType()
         #
-        max_workers = min(32, (os.cpu_count() or 1) + 4)
+        try:
+            from os import cpu_count
+        except ImportError:
+            from multiprocessing import cpu_count
+        except ImportError:
+            cpu_count = lambda: 1
+
+        max_workers = min(32, (cpu_count() or 1) + 4)
         with concurrent_futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future = executor.submit(self.vcall, cmd, warn_to_info=True, env=env)
             try:
