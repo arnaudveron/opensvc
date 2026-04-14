@@ -8,6 +8,7 @@ from .. import Sync, notify
 from core.objects.svcdict import KEYS
 from utilities.proc import justcall
 from utilities.lazy import lazy
+from utilities.cache import cache, clear_cache
 
 DRIVER_GROUP = "sync"
 DRIVER_BASENAME = "symsnapvx"
@@ -63,6 +64,12 @@ KEYS.register_driver(
     keywords=KEYWORDS,
 )
 
+CACHE_SIG = "{args[0].svc.path}-{args[0].rid}"
+CACHE_SIG_CLEAR = "%s-%s"
+
+# Cache vxlist outputs for 30min, to not overload the array controler
+MIN_VX_LIST_PERIOD = 1600
+
 def driver_capabilities(node=None):
     from utilities.proc import which
     data = []
@@ -108,16 +115,9 @@ def parse_vx_list(s):
         d = {}
         for sub in e.iter():
             d[sub.tag] = sub.text
-        d["last"] = parse_last(d.get("last_timestamp"))
+        d["last"] = d.get("last_timestamp")
         l.append(d)
     return l
-
-def parse_last(s):
-    # format: Thu Feb 25 10:20:56 2010
-    try:
-        return datetime.datetime.strptime(s, "%a %b %d %H:%M:%S %Y")
-    except AttributeError:
-        return
 
 def devid_of(symid, devpath):
     from env import Env
@@ -155,6 +155,7 @@ def parse_syminq(s):
             d[sub.tag] = sub.text
         l.append(d)
     return l
+
 
 class SyncSymsnapvx(Sync):
     def __init__(self,
@@ -225,6 +226,15 @@ class SyncSymsnapvx(Sync):
     def vx_cmd(self):
         return ["/usr/symcli/bin/symsnapvx", "-sid", self.symid]
 
+    @cache(CACHE_SIG+".vx.list", ttl=MIN_VX_LIST_PERIOD, sid=DRIVER_BASENAME)
+    def list_cached(self):
+        """
+        Return the list of snapshot volumes
+
+        returned value must support JSON serialization to enable caching
+        """
+        return self.list()
+
     def list(self):
         if not self.merged_devs:
             raise ex.Error("no devices")
@@ -238,7 +248,7 @@ class SyncSymsnapvx(Sync):
         return parse_vx_list(out)
 
     def get_snap(self):
-        snaps = self.list()
+        snaps = self.list_cached()
         name = self.format_name()
         for snap in snaps:
             if snap["snapshot_name"] == name:
@@ -295,6 +305,8 @@ class SyncSymsnapvx(Sync):
         if last is None:
             return core.status.DOWN
         delay = datetime.timedelta(seconds=self.sync_max_delay)
+        # last format: Thu Feb 25 10:20:56 2010
+        last = datetime.datetime.strptime(last, "%a %b %d %H:%M:%S %Y")
         self.status_log("last snapshot on %s, %s generations" % (last, gens), "info")
         if last < datetime.datetime.now() - delay:
             self.status_log("last snapshot too old (<%s)" % delay, "warn")
@@ -303,5 +315,8 @@ class SyncSymsnapvx(Sync):
 
     @notify
     def sync_update(self):
-        self.establish()
-
+        try:
+            self.establish()
+        finally:
+            # CACHE_SIG_CLEAR = "%s-%s"
+            clear_cache(CACHE_SIG_CLEAR % (self.svc.path, self.rid) + ".vx.list", sid=DRIVER_BASENAME)
