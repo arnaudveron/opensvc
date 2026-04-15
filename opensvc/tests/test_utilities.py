@@ -90,7 +90,7 @@ class TestUtilities:
     @staticmethod
     def test_cache_ttl(osvc_path_tests, mocker):
         class ObjTest(object):
-            @cache("foo", ttl=0.1)
+            @cache("foo", ttl=0.2)
             def foo(self, _, data=None):
                 data = data or 0
                 return data
@@ -100,12 +100,12 @@ class TestUtilities:
         assert test_obj.foo("bar", data=1) == 0
         assert test_obj.foo("bar", data=1) == 0
         assert test_obj.foo("bar", data=1) == 0
-        time.sleep(0.1)
+        time.sleep(0.2)
         assert test_obj.foo("bar", data=2) == 2
         assert test_obj.foo("bar", data=3) == 2
         assert test_obj.foo("bar", data=4) == 2
         assert test_obj.foo("bar", data=5) == 2
-        time.sleep(0.1)
+        time.sleep(0.2)
         assert test_obj.foo("bar", data=8) == 8
         assert test_obj.foo("bar", data=20) == 8
 
