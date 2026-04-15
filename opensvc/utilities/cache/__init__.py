@@ -80,6 +80,8 @@ def cache_put(fpath, data, log=None):
         with open(fpath, "w") as f:
             json.dump(data, f)
     except Exception as e:
+        if log:
+            log.debug("cache PUT: %s rollback on error: %s", fpath, str(e))
         try:
             os.unlink(fpath)
         except:
