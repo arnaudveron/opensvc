@@ -68,7 +68,7 @@ import sys
 import re
 import tempfile
 from subprocess import *
-from distutils.version import LooseVersion as V
+from foreign.looseversion import LooseVersion as V
 from utilities import which
 
 

@@ -332,7 +332,7 @@ zlib                                                               ALL  @@R:zlib
 
         ll = []
         ix86_added = False
-        from distutils.version import LooseVersion as V
+        from foreign.looseversion import LooseVersion as V
         for _pkgname, _version in sorted(l, key=lambda x: V(x[1]), reverse=True):
             pkgarch = _pkgname.split('.')[-1]
             if pkgarch not in ('i386', 'i586', 'i686', 'ia32'):
