@@ -30,4 +30,5 @@ LAST=$(git describe --abbrev=0 --tags)
 COMMITS=${1:-$LAST..HEAD}
 echo COMMITS=$COMMITS
 
+export PYTHONPATH=$PYTHONPATH:$(dirname $PATH_SCRIPT/../../..)
 $OSVC_PYTHON $PATH_SCRIPT/changelog.py --commits $COMMITS --verbose

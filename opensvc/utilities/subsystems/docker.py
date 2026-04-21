@@ -8,7 +8,6 @@ import json
 import os
 import re
 import time
-from distutils.version import LooseVersion as V # pylint: disable=no-name-in-module,import-error
 
 import utilities.lock
 import core.status
@@ -17,6 +16,7 @@ import core.exceptions as ex
 from env import Env
 from utilities.lazy import threadsafe_lazy as lazy, unset_lazy, set_lazy
 from utilities.proc import justcall
+from foreign.looseversion import LooseVersion as V
 
 def has_docker(program_list):
     for exe in program_list:

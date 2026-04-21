@@ -16,6 +16,7 @@ from utilities.lazy import *
 from utilities.net.converters import *
 from utilities.proc import is_exe, justcall, lcall, qcall, vcall, which, call, drop_option
 from utilities.render.banner import banner
+from utilities.semver import Semver
 from utilities.string import bencode, bdecode, empty_string, is_string
 
 
@@ -626,3 +627,72 @@ class TestAbbrev:
     )
     def test_it_correctly_trim_nodes(input_nodes, expected_nodes):
         assert abbrev(input_nodes) == expected_nodes
+
+
+@pytest.mark.ci
+class TestSemver:
+    @staticmethod
+    @pytest.mark.parametrize(
+    "a,b,eq,lt",
+    [
+        # ─────────────────────────────
+        # Equality (core correctness)
+        # ─────────────────────────────
+        ("1.0.0", "1.0.0", True, False),
+        ("1.0.0+build1", "1.0.0+build2", True, False),
+        ("1.0.0-alpha1+build1", "1.0.0-alpha1+build2", True, False),
+        ("1.0.0-alpha1", "1.0.0-alpha1", True, False),
+        ("17.5.0", "17.5.0", True, False),
+
+        # ─────────────────────────────
+        # Basic numeric ordering
+        # ─────────────────────────────
+        ("1.0.1", "1.0.2", False, True),
+        ("1.1.0", "1.2.0", False, True),
+        ("1.9.0", "1.10.0", False, True),
+        ("17.5.2", "17.5.3", False, True),
+        ("17.5.5-aaa", "17.5.4-bbb", False, False),
+        ("17.5.5-ddd", "17.5.4-bbb", False, False),
+        ("17.5.3-aaa", "17.5.4-bbb", False, True),
+        ("17.5.3-ddd", "17.5.4-bbb", False, True),
+        # ─────────────────────────────
+        # Pre-release vs release
+        # ─────────────────────────────
+        ("1.0.0-alpha", "1.0.0", False, True),
+        ("1.0.0-rc.1", "1.0.0", False, True),
+
+        # ─────────────────────────────
+        # Pre-release ordering (same base version)
+        # ─────────────────────────────
+        ("1.0.0-alpha", "1.0.0-beta", False, True),
+        ("1.0.0-alpha.1", "1.0.0-alpha.2", False, True),
+        ("1.0.0-alpha.2", "1.0.0-alpha.10", False, True),
+        ("1.0.0-alpha.beta", "1.0.0-beta", False, True),
+
+        # ─────────────────────────────
+        # Numeric vs string identifiers
+        # ─────────────────────────────
+        ("1.0.0-alpha.1", "1.0.0-alpha.beta", False, True),
+        ("1.0.0-beta.2", "1.0.0-beta.11", False, True),
+
+        # ─────────────────────────────
+        # Length rule (shorter < longer if prefix equal)
+        # ─────────────────────────────
+        ("1.0.0-alpha", "1.0.0-alpha.1", False, True),
+        ("1.0.0-alpha.1", "1.0.0-alpha.1.1", False, True),
+
+        # ─────────────────────────────
+        # Edge mixed prerelease forms
+        # ─────────────────────────────
+        ("1.0.0-0.1", "1.0.0-alpha", False, True),
+    ],
+    )
+    def test_semver_compare(a, b, eq, lt):
+        v_a = Semver.parse(a)
+        v_b = Semver.parse(b)
+
+        assert (v_a == v_b) is eq, "== failed"
+        assert (v_a < v_b) is lt, "< failed"
+
+        # important invariant: cannot be both equal and less
+        assert not (eq and lt)

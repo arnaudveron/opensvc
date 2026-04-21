@@ -2,9 +2,8 @@
 
 import os
 import sys
-import json
-from distutils.version import LooseVersion as V
 from subprocess import *
+from foreign.looseversion import LooseVersion as V
 
 sys.path.append(os.path.dirname(__file__))
 
