@@ -1,6 +1,7 @@
 import datetime
 import os
 import re
+import time
 
 from .asset import BaseAsset
 from utilities.lazy import lazy
@@ -757,7 +758,7 @@ class Asset(BaseAsset):
         last = last.replace(microsecond=0)
         return {
             "title": "last boot",
-            "value": last.timestamp(),
+            "value": time.mktime(last.timetuple()),
             "source": self.s_probe
         }
 
