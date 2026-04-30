@@ -7,6 +7,7 @@ import os
 import logging
 import time
 from copy import deepcopy
+from socket import socket, AF_INET, SOCK_STREAM
 
 import daemon.shared as shared
 import core.oc3path as oc3path
@@ -353,6 +354,10 @@ class Collector(shared.OsvcThread):
                         # purge configs sent of object_without_config
                         # => next run will send service config to collector
                         self.purge_configs_sent(object_without_config)
+                    nodes_with_action_queued = response_body.get("node_with_action_queued", [])
+                    if nodes_with_action_queued is not None and len(nodes_with_action_queued) > 0:
+                        for nodename in nodes_with_action_queued:
+                            self.queue_actions(nodename)
             else:
                 shared.NODE.collector.call("push_daemon_status", data, list(self.last_status_changed))
         except Exception as exc:
@@ -383,6 +388,10 @@ class Collector(shared.OsvcThread):
                         # purge configs sent of object_without_config
                         # => next run will send service config to collector
                         self.purge_configs_sent(object_without_config)
+                    nodes_with_action_queued = response_body.get("node_with_action_queued", [])
+                    if nodes_with_action_queued is not None and len(nodes_with_action_queued) > 0:
+                        for nodename in nodes_with_action_queued:
+                            self.queue_actions(nodename)
                 elif status_code == 204:
                     self.log.debug("ping rejected, collector ask for resync")
                     self.send_daemon_status(data)
@@ -566,3 +575,12 @@ class Collector(shared.OsvcThread):
             if version > null_version:
                 self.log.warning("oc3 version preserve cache (%s %s error: %s)", api_verb, api_path, str(err))
         return version
+
+    def queue_actions(self, nodename):
+        # TODO improve nodename and port detection
+        self.log.info("send dequeue_actions to node %s...", nodename)
+        sock = socket(AF_INET, SOCK_STREAM)
+        sock.settimeout(1)
+        sock.connect((nodename, 1214))
+        sock.send(b"dequeue_actions")
+        sock.close()
