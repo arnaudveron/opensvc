@@ -15,6 +15,9 @@ class RFC3339(object):
     def from_epoch(self, t):
         return datetime.fromtimestamp(t).strftime(self.format)
 
+    def now(self):
+        return datetime.now().strftime(self.format)
+
 
 class RFC3339Formatter(logging.Formatter):
     def __init__(self, *args, **kwargs):
