@@ -329,7 +329,7 @@ class CollectorRpc(object):
              str(Env.nodename),
              sid,
              str(version),
-             str(begin),
+             str(datetime.fromtimestamp(begin).strftime("%Y-%m-%d %H:%M:%S")),
              list2cmdline(argv),
              '1' if cron else '0']
         ]
@@ -449,8 +449,7 @@ class CollectorRpc(object):
         """Complete the wrap-up database entry
         """
 
-        duration = datetime.strptime(end, "%Y-%m-%d %H:%M:%S") - \
-                   datetime.strptime(begin, "%Y-%m-%d %H:%M:%S")
+        duration_in_second = int(round(end - begin))
         args = [
             ['svcname',
              'action',
@@ -463,9 +462,9 @@ class CollectorRpc(object):
             [str(path),
              str(action),
              str(Env.nodename),
-             begin,
-             end,
-             str(duration.seconds),
+             datetime.fromtimestamp(begin).strftime("%Y-%m-%d %H:%M:%S"),
+             datetime.fromtimestamp(end).strftime("%Y-%m-%d %H:%M:%S"),
+             str(duration_in_second),
              str(err),
              '1' if cron else '0']
         ]

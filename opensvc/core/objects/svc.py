@@ -1324,6 +1324,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
 
     def push_begin_action(self, action, argv, begin):
         if self.node.oc3_version() >= Semver(1, 0, 11):
+            rfc_time = RFC3339()
             api_verb = "POST"
             api_path = oc3path.FEED_INSTANCE_ACTION
             headers = {"Accept": "application/json", "Content-Type": "application/json"}
@@ -1333,7 +1334,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
                     "path": self.path,
                     "action": action,
                     "argv": argv,
-                    "begin": begin,
+                    "begin": rfc_time.from_epoch(begin),
                     "cron": self.options.cron,
                     "session_uuid": Env.session_uuid,
                     "version": self.node.agent_version,
@@ -1364,6 +1365,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
             headers = {"Accept": "application/json", "Content-Type": "application/json"}
             self.log.debug("%s %s", api_verb, api_path)
             data = {}
+            rfc_time = RFC3339()
             try:
                 status = "ok"
                 if err != 0:
@@ -1385,8 +1387,8 @@ class BaseSvc(Crypt, ExtConfigMixin):
                     "path": self.path,
                     "action": action,
                     "argv": argv,
-                    "begin": begin,
-                    "end": end,
+                    "begin": rfc_time.from_epoch(begin),
+                    "end": rfc_time.from_epoch(end),
                     "status": status,
                     "status_log": log_contents,
                     "cron": self.options.cron,
@@ -1461,8 +1463,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
         Do the action.
         Finally, feed the log to the collector.
         """
-        rfc_time = RFC3339()
-        begin = rfc_time.from_epoch(time.time())
+        begin = time.time()
 
         # Provision a database entry to store action log later
         try:
@@ -1499,7 +1500,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
         # Push result and logs to database
         actionlogfilehandler.close()
         self.logger.removeHandler(actionlogfilehandler)
-        end = rfc_time.from_epoch(time.time())
+        end = time.time()
         self.push_end_action(action, argv, begin, end, err, actionlogfile)
         return err
 
