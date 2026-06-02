@@ -2400,6 +2400,52 @@ class Node(Crypt, ExtConfigMixin, NetworksMixin):
         return default
 
     def dequeue_actions(self):
+        if self.oc3_version() >= Semver(3, 0, 2):
+            self.dequeue_actions_oc3()
+        else:
+            self.dequeue_actions_oc2()
+
+    def dequeue_actions_oc3(self):
+        api_verb = "GET"
+        api_path = oc3path.FEED_NODE_ACTIONQ
+        status_code, resp = self.oc3_request_feed(api_verb, api_path)
+        self.oc3_assert_status_code(api_verb, api_path, status_code, resp, expected=[200])
+        try:
+            actions = resp.get("actions", [])
+            self.log.debug("Received actions from OC3: %s", actions)
+            ids = [action["id"] for action in actions]
+            api_verb = "POST"
+            api_path = oc3path.FEED_NODE_ACTIONQ_RUNNING
+            self.log.debug("acknowledge actions from OC3: %s", ids)
+            status_code, resp = self.oc3_request_feed(api_verb, api_path, data={"ids": ids})
+            self.oc3_assert_status_code(api_verb, api_path, status_code, resp, expected=[202])
+            self.log.debug("acknowledge actions from OC3 done")
+            self.dequeue_actions_oc3_run(actions)
+        except:
+            pass
+
+    def dequeue_actions_oc3_run(self, actions):
+        api_verb = "POST"
+        api_path = oc3path.FEED_NODE_ACTIONQ_DONE
+        from utilities.rfc3339 import RFC3339
+
+        rfc3339 = RFC3339()
+
+        for action in actions:
+            ret, out, err = self.dequeue_action(action)
+            out = ANSI_ESCAPE.sub('', out)
+            err = ANSI_ESCAPE.sub('', err)
+            action_result = {
+                "id": action.get('id'),
+                "ret": ret,
+                "stdout": ANSI_ESCAPE.sub('', out),
+                "stderr": ANSI_ESCAPE.sub('', err),
+                "dequeued_at": rfc3339.now()
+            }
+            status_code, resp = self.oc3_request_feed(api_verb, api_path, data=action_result)
+            self.oc3_assert_status_code(api_verb, api_path, status_code, resp, expected=[202])
+
+    def dequeue_actions_oc2(self):
         """
         The dequeue_actions node action entrypoint.
         Poll the collector action queue until emptied.
