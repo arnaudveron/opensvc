@@ -1323,7 +1323,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
             self.log.error("rollback %s failed", action)
 
     def push_begin_action(self, action, argv, begin):
-        if self.node.oc3_version() >= Semver(1, 0, 11):
+        if self.node.oc3_version() >= Semver(3, 0, 3):
             rfc_time = RFC3339()
             api_verb = "POST"
             api_path = oc3path.FEED_INSTANCE_ACTION
@@ -1332,11 +1332,14 @@ class BaseSvc(Crypt, ExtConfigMixin):
             try:
                 data = {
                     "path": self.path,
+                    "rid": ",".join(self.action_rid),
                     "action": action,
                     "argv": argv,
                     "begin": rfc_time.from_epoch(begin),
                     "cron": self.options.cron,
                     "session_uuid": Env.session_uuid,
+                    "origin": os.environ.get("OSVC_ACTION_ORIGIN", "user"),
+                    "pid": str(os.getpid()),
                     "version": self.node.agent_version,
                 }
                 status_code, response_data = self.node.oc3_request_feed(api_verb, api_path, data=data, headers=headers,
@@ -1359,7 +1362,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
         Send to the collector the service status after an action, and
         the action log.
         """
-        if self.node.oc3_version() >= Semver(1, 0, 11):
+        if self.node.oc3_version() >= Semver(3, 0, 3):
             api_verb = "PUT"
             api_path = oc3path.FEED_INSTANCE_ACTION
             headers = {"Accept": "application/json", "Content-Type": "application/json"}
@@ -1385,6 +1388,7 @@ class BaseSvc(Crypt, ExtConfigMixin):
 
                 data = {
                     "path": self.path,
+                    "rid": ",".join(self.action_rid),
                     "action": action,
                     "argv": argv,
                     "begin": rfc_time.from_epoch(begin),
@@ -1393,6 +1397,8 @@ class BaseSvc(Crypt, ExtConfigMixin):
                     "status_log": log_contents,
                     "cron": self.options.cron,
                     "session_uuid": Env.session_uuid,
+                    "origin": os.environ.get("OSVC_ACTION_ORIGIN", "user"),
+                    "pid": str(os.getpid()),
                     "version": self.node.agent_version,
                 }
                 status_code, response_data = self.node.oc3_request_feed(api_verb, api_path, data=data, headers=headers,
